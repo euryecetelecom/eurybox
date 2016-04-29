@@ -1,0 +1,1551 @@
+#!/bin/bash
+#EuryBOX functions file
+#2015/06/27: Guillaume REMBERT, initial version based on EuryBOX prototype
+
+#INTERNAL VARIABLES
+declare -A EURYBOX_DETECTED_DISKS
+declare -A EURYBOX_DETECTED_DOMAINS
+declare -A EURYBOX_DETECTED_HYPERVISOR
+declare -A EURYBOX_DETECTED_INTERFACES
+declare -A EURYBOX_DETECTED_NETWORK_FILTERS
+declare -A EURYBOX_DETECTED_NETWORKS
+declare -A EURYBOX_DETECTED_NODE_DEVICES
+declare -A EURYBOX_DETECTED_SECRETS
+declare -A EURYBOX_DETECTED_SNAPSHOTS
+declare -A EURYBOX_DETECTED_STORAGE_POOLS
+declare -A EURYBOX_DETECTED_STORAGE_VOLUMES
+
+###################
+# UTILS FUNCTIONS #
+###################
+
+#1 arg min required: command [command] [command] ...
+eurybox_check_command()
+{
+  local -i not_found
+  for cmd; do
+    command -v >&- "$cmd" || { 
+         eurybox_message_display warning CHECK $"Command $cmd is not found"
+            let not_found++
+    }
+  done
+  (( not_found == 0 )) || {
+    eurybox_message_display error CHECK "Please install first dependencies listed above to use EuryBOX scripts"
+  }
+}
+
+#1 arg required: flush_directory
+eurybox_flush_directory ()
+{
+  T_PATH=$1
+  if [[ !( $T_PATH = "") && !( $T_PATH = "/" ) && !( $T_PATH == *"/etc"* ) && !( $T_PATH == *"/proc"* )  && !( $T_PATH = "/home" ) && !( $T_PATH == *"/bin"* ) && !( $T_PATH == *"/boot"*) && !( $T_PATH == *"/lib"*)  && !($T_PATH == *"/lib64"*) && !($T_PATH == *"/sbin"*) && !($T_PATH == *"/usr"*) ]]
+  then
+    sudo rm -Rf $T_PATH/*
+    STATUS=$?
+    if [[ !($STATUS -eq 0) ]]
+    then
+      eurybox_message_display warning FLUSH "Directory flush failed: $T_PATH"
+    else
+      eurybox_message_display message FLUSH "Directory flushed: $T_PATH"
+    fi
+  else
+    eurybox_message_display warning FLUSH "Forbidden directory flush attempt: $T_PATH"
+  fi
+}
+
+#No arg required
+eurybox_check_kernel()
+{
+  #Check kernel name
+  KERNEL_NAME=`uname -s`
+  if [[ $KERNEL_NAME != "Linux" ]]
+  then
+    eurybox_message_display error CHECK "Kernel $KERNEL_NAME not supported - please use Linux"
+  else
+    eurybox_message_display message CHECK "Kernel $KERNEL_NAME found"
+  fi
+  #Check nfs4 capabilities
+  #fgrep nfs4 /proc/kallsyms
+}
+
+#1 arg can be supplied as script type (BACKUP/UPDATE/EXEC_COMMAND) to add extra checks
+#You need to have sourced the conf et functions files before
+eurybox_check_configuration ()
+{
+  SCRIPT_TYPE=$1
+  
+  #Checking script execution parameters
+  if [[ -z $EURYBOX_CORPORATE || -z $EURYBOX_LOG_LEVEL || -z $EURYBOX_PARALLELISM_LEVEL ]]
+  then
+    eurybox_message_display warning CONFIG "Script execution parameters not set. Continuing script execution in debug mode."
+    EURYBOX_CORPORATE="EURYECE TELECOM"
+    EURYBOX_LOG_LEVEL=debug
+    EURYBOX_PARALLELISM_LEVEL=2
+  else
+    eurybox_message_display message CONFIG "Script execution parameters:"
+    eurybox_message_display message CONFIG "Corporate: $EURYBOX_CORPORATE"
+    eurybox_message_display message CONFIG "Log level: $EURYBOX_LOG_LEVEL"
+    eurybox_message_display message CONFIG "Parallelism level: $EURYBOX_PARALLELISM_LEVEL"
+  fi
+
+  #Checking environment parameters
+  if [[ -z $EURYBOX_DOMAIN || -z $EURYBOX_SERVICES_NUMBER || ${#EURYBOX_SERVICES[@]} -eq 0 || ${#EURYBOX_HYPERVISOR[@]} -eq 0 ]]
+  then
+    eurybox_message_display error CONFIG "Environment parameters not set: Domaine/$EURYBOX_DOMAIN Services/${EURYBOX_SERVICES[*]} Num/$EURYBOX_SERVICES_NUMBER Hypervisor/${EURYBOX_HYPERVISOR[*]}"
+  else
+    eurybox_message_display message CONFIG "Script environment parameters:"
+    eurybox_message_display message CONFIG "Domain: $EURYBOX_DOMAIN"
+    eurybox_message_display message CONFIG "Hypervisor: $EURYBOX_HYPERVISOR[*]"
+    for ((EURYBOX_SERVICES_NUM=1;EURYBOX_SERVICES_NUM<=$EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM++));
+    do
+      eurybox_message_display message CONFIG "Target service: host:${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]}, name: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}, ssh user: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,USER]}, ssh port: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,PORT]}, OS: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,OS]}, disks: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,DISK]}"
+    done
+    eurybox_message_display debug CONFIG "Services number: $EURYBOX_SERVICES_NUMBER"
+  fi
+  #Checking distribution parameters
+  if [[ -z $EURYBOX_DISTRIB_TYPE || -z $EURYBOX_DISTRIB_VERSION || -z $EURYBOX_DISTRIB_MAC_TYPE ]]
+  then
+    eurybox_message_display error CONFIG "Distribution parameters not set: Type/$EURYBOX_DISTRIB_TYPE Version/$EURYBOX_DISTRIB_VERSION MAC Type:$EURYBOX_DISTRIB_MAC_TYPE"
+  else
+    case $EURYBOX_DISTRIB_TYPE in
+      centos|redhat ) 
+        if [[ $EURYBOX_DISTRIB_VERSION = "6.0" || $EURYBOX_DISTRIB_VERSION = "6.1" || $EURYBOX_DISTRIB_VERSION = "6.2" || $EURYBOX_DISTRIB_VERSION = "6.3" || $EURYBOX_DISTRIB_VERSION = "6.4" || $EURYBOX_DISTRIB_VERSION = "6.5" || $EURYBOX_DISTRIB_VERSION = "6.6" || $EURYBOX_DISTRIB_VERSION = "6.7" || $EURYBOX_DISTRIB_VERSION = "7.0" || $EURYBOX_DISTRIB_VERSION = "7.1" || $EURYBOX_DISTRIB_VERSION = "7.2" ]]
+        then
+          eurybox_message_display message CONFIG "Distribution configured: $EURYBOX_DISTRIB_TYPE - version $EURYBOX_DISTRIB_VERSION"
+        else
+          eurybox_message_display error CONFIG "Distribution $EURYBOX_DISTRIB_TYPE - unsupported version: $EURYBOX_DISTRIB_VERSION - please use version 6.x or 7.x"
+        fi
+      ;;
+      * )
+        eurybox_message_display error CONFIG "Unsupported distribution: $EURYBOX_DISTRIB_TYPE - please use centos or redhat distribution"
+      ;;
+    esac
+    case $EURYBOX_DISTRIB_MAC_TYPE in
+      selinux|none ) 
+         eurybox_message_display message CONFIG "Distribution mandatory access control type configured: $EURYBOX_DISTRIB_TYPE - version $EURYBOX_DISTRIB_VERSION"
+      ;;
+      apparmor|* )
+        eurybox_message_display error CONFIG "Unsupported mandatory access control type: $EURYBOX_DISTRIB_MAC_TYPE - please use selinux or none"
+      ;;
+    esac
+  fi
+# || $SCRIPT_TYPE = "RESTORE"
+  if [[ $SCRIPT_TYPE = "BACKUP" ]]
+  then
+    #Checking backup parameters
+    if [[ -z $EURYBOX_BACKUP_COLD || -z $EURYBOX_BACKUP_HOT || ${#EURYBOX_BACKUP_DESTINATION[@]} -eq 0 || ${#EURYBOX_BACKUP_ARCHIVE[@]} -eq 0 || ${#EURYBOX_BACKUP_TARGETS[@]} -eq 0 ]]
+    then
+      eurybox_message_display error CONFIG "Backup parameters not set: Cold/$EURYBOX_BACKUP_COLD Hot/$EURYBOX_BACKUP_HOT Destination/${EURYBOX_BACKUP_DESTINATION[*]} Archive/${EURYBOX_BACKUP_ARCHIVE[*]} Target/${EURYBOX_BACKUP_TARGETS[*]}"
+    else
+      eurybox_message_display message CONFIG "Backup parameters:"
+      eurybox_message_display message CONFIG "Cold backup enabled: $EURYBOX_BACKUP_COLD"
+      eurybox_message_display message CONFIG "Hot backup enabled: $EURYBOX_BACKUP_HOT"
+      eurybox_message_display message CONFIG "Backup destination: ${EURYBOX_BACKUP_DESTINATION[*]}"
+      if [[ $EURYBOX_LOG_LEVEL = "debug" ]]
+      then
+#NB: will display the encryption passphrase in the logs if debug mode selected
+        eurybox_message_display debug CONFIG "Archive parameters: ${EURYBOX_BACKUP_ARCHIVE[*]}"
+      fi
+      eurybox_message_display message CONFIG "Archive targets: ${EURYBOX_BACKUP_TARGETS[*]}"
+    fi
+  fi
+##Make sure pipe individual output exit status are available
+##set -o pipefail
+  #Initialize tools options
+  case ${EURYBOX_HYPERVISOR[TYPE]} in
+    qemu )
+      EURYBOX_VIRSH_OPTIONS="-c qemu:///system"
+    ;;
+    xen )
+      EURYBOX_VIRSH_OPTIONS="-c xen:///"
+    ;;
+    * )
+      eurybox_message_display error CONFIG "Bad hypervisor type: ${EURYBOX_HYPERVISOR[TYPE]}"
+    ;;
+  esac
+  EURYBOX_SSH_OPTIONS="-oPasswordAuthentication=no -oConnectTimeout=$EURYBOX_NETWORK_TIMEOUT -oConnectionAttempts=$EURYBOX_MAX_RETRY_ON_FAILURE"
+  EURYBOX_NMAP_OPTIONS="--host-timeout $EURYBOX_NETWORK_TIMEOUT --max-retries $EURYBOX_MAX_RETRY_ON_FAILURE"
+  EURYBOX_LS_OPTIONS="-x"
+  EURYBOX_MNT_NFS_OPTIONS="-o hard,retry=$EURYBOX_MAX_RETRY_ON_FAILURE,rsize=8192,wsize=8192,timeo=${EURYBOX_NETWORK_TIMEOUT}0"
+  case $EURYBOX_LOG_LEVEL in
+    debug )
+      set -xv
+      EURYBOX_SSH_OPTIONS+=" -oLogLevel=debug"
+      EURYBOX_NMAP_OPTIONS+=" -d9 -v3"
+      EURYBOX_LS_OPTIONS+=" -a"
+      EURYBOX_MNT_NFS_OPTIONS+=" -v"
+      EURYBOX_VIRSH_OPTIONS+=" -q -d 0"
+    ;;
+    verbose )
+      set -v
+      EURYBOX_SSH_OPTIONS+=" -oLogLevel=verbose"
+      EURYBOX_NMAP_OPTIONS+=" -d0 -v2"
+      EURYBOX_LS_OPTIONS+=" -l"
+      EURYBOX_MNT_NFS_OPTIONS+=" -v"
+      EURYBOX_VIRSH_OPTIONS+=" -q -d 2"
+    ;;
+    info )
+      EURYBOX_SSH_OPTIONS+=" -oLogLevel=info"
+      EURYBOX_NMAP_OPTIONS+=" -d0 -v"
+      EURYBOX_LS_OPTIONS+=" -l"
+      EURYBOX_VIRSH_OPTIONS+=" -q -d 4"
+    ;;
+    warning )
+      EURYBOX_SSH_OPTIONS+=" -oLogLevel=info"
+      EURYBOX_NMAP_OPTIONS+=" -d0 -v0"
+      EURYBOX_VIRSH_OPTIONS+=" -q"
+    ;;
+    error )
+      EURYBOX_SSH_OPTIONS+=" -oLogLevel=error"
+      EURYBOX_NMAP_OPTIONS+=" -d0 -v1"
+      EURYBOX_VIRSH_OPTIONS+=" -q"
+    ;;
+  esac
+  eurybox_message_display debug CONFIG "ssh options: $EURYBOX_SSH_OPTIONS"
+  eurybox_message_display debug CONFIG "nmap options: $EURYBOX_NMAP_OPTIONS"
+  eurybox_message_display debug CONFIG "ls options: $EURYBOX_LS_OPTIONS"
+  eurybox_message_display debug CONFIG "nfs mount options: $EURYBOX_MNT_NFS_OPTIONS"
+  eurybox_message_display debug CONFIG "virsh options: $EURYBOX_VIRSH_OPTIONS"
+}
+
+#FIXME:TBD arg required
+#TODO: implement arguments usage (debug mode / config file ...) and checking
+eurybox_check_arguments ()
+{
+  eurybox_message_display message CHECK "Script arguments: $1"
+}
+
+#No arg required
+eurybox_check_distribution ()
+{
+  case $EURYBOX_DISTRIB_TYPE in
+    centos )
+      DISTRIBUTION_FILE="/etc/centos-release"
+    ;;
+    redhat )
+      DISTRIBUTION_FILE="/etc/redhat-release"
+    ;;
+    * )
+      eurybox_message_display error CHECK "Unsupported distribution: $EURYBOX_DISTRIB_TYPE - please use centos or redhat distribution"
+    ;;
+  esac
+  DETECTED_DISTRIBUTION=`grep $EURYBOX_DISTRIB_VERSION $DISTRIBUTION_FILE 2>&1`
+  STATUS=$?
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_message_display error CHECK "Configured distribution type doesn't corresponds to detected distribution"
+  else
+    if [[ $DETECTED_DISTRIBUTION != "" ]]
+    then
+      eurybox_message_display message CHECK "Distribution verification success"
+      eurybox_message_display debug CHECK "${DETECTED_DISTRIBUTION}"
+    else
+      eurybox_message_display error CHECK "Configured distribution version doesn't corresponds to detected distribution version: ${DETECTED_DISTRIBUTION}"
+    fi
+  fi
+  case $EURYBOX_DISTRIB_MAC_TYPE in
+    selinux )
+      SE_OUT=`sudo getenforce`
+      STATUS=$?
+      if [[ !($STATUS -eq 0) ]]
+      then
+        eurybox_message_display error CHECK "Configured distribution mac type doesn't seems to be supported"
+      else
+        case $SE_OUT in
+          Enforcing|enforcing )
+            eurybox_message_display message CHECK "SELinux - enabled"
+          ;;
+          Permissive|permissive )
+            eurybox_message_display warning CHECK "SELinux - permissive mode detected"
+          ;;
+          Disabled|disabled )
+            eurybox_message_display warning CHECK "SELinux - disabled"
+          ;;
+          * )
+            eurybox_message_display warning CHECK "Unknown mode: $SE_OUT"
+          ;;
+        esac
+      fi
+    ;;
+    none )
+    ;;
+  esac
+}
+
+eurybox_check_hv_access ()
+{
+  TYPE=$1
+  SYSINFOS=`sudo virsh $EURYBOX_VIRSH_OPTIONS sysinfo 2>&1`
+  STATUS=$?
+  if [[ $STATUS -eq 0 ]]
+  then
+    eurybox_message_display message CHECK "Hypervisor - access OK"
+    NODEINFOS=`sudo virsh $EURYBOX_VIRSH_OPTIONS nodeinfo 2>&1`
+    CAPABILITIES=`sudo virsh $EURYBOX_VIRSH_OPTIONS capabilities 2>&1`
+    DOMCAPABILITIES=`sudo virsh $EURYBOX_VIRSH_OPTIONS domcapabilities 2>&1`
+    eurybox_message_display debug CHECK "$SYSINFOS"
+    eurybox_message_display debug CHECK "$NODEINFOS"
+    eurybox_message_display debug CHECK "$CAPABILITIES"
+    eurybox_message_display debug CHECK "$DOMCAPABILITIES"
+  else
+    eurybox_message_display error CHECK "Hypervisor - access failed: $SYSINFOS_OK"
+  fi
+}
+
+#5 arg min required: vm_name vm_host ssh_user ssh_port disk [disk] ...
+eurybox_check_vm_access ()
+{
+  NAME=$1
+  HOST=$2
+  USER=$3
+  PORT=$4
+  DISK=${@:5:$#}
+  EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list --all | grep $NAME 2>&1`
+  if [[ -z "$EURYBOX_VM_NAME" ]]
+  then
+    eurybox_message_display error CHECK "VM $NAME - virsh not found"
+  else
+    eurybox_message_display debug CHECK "VM $NAME - virsh found: $EURYBOX_VM_NAME"
+    EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | grep $NAME`
+    if [[ -z "$EURYBOX_VM_NAME" ]]
+    then
+      eurybox_message_display warning CHECK "VM $NAME is not running - cannot check network configuration"
+    else
+      eurybox_message_display message CHECK "VM $NAME - running"
+      eurybox_message_display debug CHECK "$EURYBOX_VM_NAME"
+      EURYBOX_SSH_OK=`ssh $EURYBOX_SSH_OPTIONS -p $PORT $USER@$HOST "touch eurybox_check_ssh_ok" 2>&1`
+      STATUS=$?
+      if [[ $STATUS -eq 0 ]]
+      then
+        eurybox_message_display message CHECK "VM $NAME - SSH connection OK"
+        eurybox_message_display debug CHECK "$EURYBOX_SSH_OK"
+      else
+        eurybox_message_display warning CHECK "VM $NAME - SSH connection failed: $EURYBOX_SSH_OK"
+      fi
+    fi
+  fi
+  if [[ $DISK = "" ]]
+  then
+    eurybox_message_display debug CHECK "VM $NAME - no additional disk configured"
+  else
+    EURYBOX_DISK_OK=`sudo ls $EURYBOX_LS_OPTIONS $DISK 2>&1`
+    STATUS=$?
+    if [[ !($STATUS -eq 0) ]]
+    then
+      eurybox_message_display warning CHECK "VM $NAME - disk $DISK - access failed: $EURYBOX_DISK_OK"
+    else
+      eurybox_message_display message CHECK "VM $NAME - disk $DISK - access OK"
+      eurybox_message_display debug CHECK "$EURYBOX_DISK_OK"
+    fi
+  fi
+}
+
+#1 arg can be supplied as script type (BACKUP/UPDATE/EXEC_COMMAND) to add extra checks
+eurybox_check_environment ()
+{
+  SCRIPT_TYPE=$1
+  #Check external sotfware used
+  eurybox_check_command grep sudo ssh openssl tar par2 virsh sha512sum sha256sum awk pigz df tail virt-sysprep tput nmap rpcinfo pbzip2
+  #Check kernel capabilities
+  eurybox_check_kernel
+  #Check distribution is coherent with configuration
+  eurybox_check_distribution
+  #Check administration privileges
+  sudo -nv
+  STATUS=$?
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_message_display error CHECK "Administration privileges are not available. Please execute this script as root or privileged user without password prompting (NOPASSWD / sudo group member)."
+  else
+    eurybox_message_display debug CHECK "Administration privileges available."
+  fi
+  #Check access to Hypervisor
+  eurybox_check_hv_access
+  #Check access to VMs
+  for ((EURYBOX_SERVICES_NUM=1;EURYBOX_SERVICES_NUM<=$EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM++));
+  do
+    eurybox_check_vm_access ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,USER]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,PORT]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,DISK]}
+  done
+  #FOR BKP ONLY
+#TODO:  $SCRIPT_TYPE = "RESTORE"
+  if [[ $SCRIPT_TYPE = "BACKUP" ]]
+  then
+    #Check tmp folder
+    if [[ !(-d ${EURYBOX_BACKUP_TMP_FOLDER}) ]]
+    then
+      sudo mkdir -p ${EURYBOX_BACKUP_TMP_FOLDER}
+      STATUS=$?
+      if [[ !($STATUS -eq 0) ]]
+      then
+        eurybox_message_display error BACKUP "Temp folder ${EURYBOX_BACKUP_TMP_FOLDER} doesn't exists and folder creation failed"
+      else
+        eurybox_message_display message BACKUP "Temp folder ${EURYBOX_BACKUP_TMP_FOLDER} successfully created"
+      fi
+    fi
+    #Check bkp destination (access + space left size)
+    case ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]} in
+      "SSH" )
+        SPACE_LEFT=`ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "df -Pk ${EURYBOX_BACKUP_DESTINATION[PATH]}/" | tail -1 | awk '{print $4}'`
+        STATUS=$?
+        if [[ !($STATUS -eq 0) || $SPACE_LEFT -eq "" ]]
+        then
+          eurybox_message_display warning CHECK "Status: $STATUS"
+          eurybox_message_display error CHECK "SSH backup destination connection failed"
+        fi
+        if (( $SPACE_LEFT < $EURYBOX_BACKUP_LOW_CRITICAL_LEVEL ))
+        then
+          eurybox_message_display error CHECK "Free space left on backup destination too low: $SPACE_LEFT kB"
+        else
+          if (( $SPACE_LEFT < $EURYBOX_BACKUP_LOW_WARNING_LEVEL ))
+          then
+            eurybox_message_display warning CHECK "Free space left on backup destination low: $SPACE_LEFT kB"
+          else
+            eurybox_message_display debug CHECK "Free space left on backup destination OK: $SPACE_LEFT kB"
+          fi
+        fi
+      ;;
+      "NFS" )
+        eurybox_mount_backup_nfs
+        SPACE_LEFT=`sudo df -Pk ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/ | tail -1 | awk '{print $4}'`
+        if (( $SPACE_LEFT < $EURYBOX_BACKUP_LOW_CRITICAL_LEVEL ))
+        then
+          eurybox_message_display error CHECK "Free space left on backup destination too low: $SPACE_LEFT kB"
+        else
+          if (( $SPACE_LEFT < $EURYBOX_BACKUP_LOW_WARNING_LEVEL ))
+          then
+            eurybox_message_display warning CHECK "Free space left on backup destination low: $SPACE_LEFT kB"
+          else
+            eurybox_message_display debug CHECK "Free space left on backup destination OK: $SPACE_LEFT kB"
+          fi
+        fi
+        eurybox_umount_backup_nfs
+      ;;
+    esac
+  #FIXME:Check permissions
+  #READ ORIGIN FOLDER / WRITE DESTINATION FOLDER
+  fi
+}
+
+#3 args required: level(debug, message, warning, error) category message
+eurybox_message_display ()
+{
+  LEVEL=$1
+  CATEGORY=$2
+  MESSAGE=$3
+  NOW=$(date +"%Y_%m_%d@%H:%M:%S")
+  case $LEVEL in
+    debug ) 
+      if [[ $EURYBOX_LOG_LEVEL = "debug" || $EURYBOX_LOG_LEVEL = "verbose" ]]
+      then
+        tput setb 0
+        tput setaf 6
+        echo "$NOW [EURYBOX][DEBUG][$CATEGORY] $MESSAGE" 
+      fi
+    ;;
+    message )
+      if [[ $EURYBOX_LOG_LEVEL = "debug" || $EURYBOX_LOG_LEVEL = "info" || $EURYBOX_LOG_LEVEL = "verbose" ]]
+      then
+        tput setb 0
+        tput setaf 2
+        echo "$NOW [EURYBOX][MESSAGE][$CATEGORY] $MESSAGE"
+      fi
+    ;;
+    warning )
+      if [[ $EURYBOX_LOG_LEVEL = "debug" || $EURYBOX_LOG_LEVEL = "info" || $EURYBOX_LOG_LEVEL = "verbose" || $EURYBOX_LOG_LEVEL = "warning" ]]
+      then
+         tput setb 0
+         tput setaf 1
+         echo "$NOW [EURYBOX][WARNING][$CATEGORY] $MESSAGE"
+      fi
+    ;;
+    error )
+      if [[ $EURYBOX_LOG_LEVEL = "debug" || $EURYBOX_LOG_LEVEL = "info" || $EURYBOX_LOG_LEVEL = "verbose" || $EURYBOX_LOG_LEVEL = "warning" || $EURYBOX_LOG_LEVEL = "error" ]]
+      then
+         tput setb 0
+         tput setaf 1
+         echo "$NOW [EURYBOX][ERROR][$CATEGORY] $MESSAGE"
+         tput setb 0
+         tput sgr0
+         echo "Stopping script execution"
+         exit 1
+      fi
+    ;;
+    * ) 
+      tput sgr0
+      echo "$NOW [EURYBOX][ERROR][SYNTAX] Bad log level message. Stopping script execution"
+      exit 1
+    ;;
+  esac
+  tput setb 0
+  tput sgr0
+}
+
+#4 args required: level(debug, message, warning, error) category outputfile message
+eurybox_message_write ()
+{
+  LEVEL=$1
+  CATEGORY=$2
+  FILE=$3
+  MESSAGE=$4
+  NOW=$(date +"%Y_%m_%d@%H:%M:%S")
+  case $LEVEL in
+    debug ) 
+      if [[ $EURYBOX_LOG_LEVEL = "debug" ]]
+      then
+        sudo echo "$NOW [EURYBOX][DEBUG][$CATEGORY] $MESSAGE" >> $FILE
+      fi
+    ;;
+    message )
+      if [[ $EURYBOX_LOG_LEVEL = "debug" || $EURYBOX_LOG_LEVEL = "message" ]]
+      then
+        sudo echo "$NOW [EURYBOX][MESSAGE][$CATEGORY] $MESSAGE" >> $FILE
+      fi
+    ;;
+    warning )
+      if [[ $EURYBOX_LOG_LEVEL = "debug" || $EURYBOX_LOG_LEVEL = "message" || $EURYBOX_LOG_LEVEL = "warning" ]]
+      then
+         sudo echo "$NOW [EURYBOX][WARNING][$CATEGORY] $MESSAGE" >> $FILE
+      fi
+    ;;
+    error )
+      if [[ $EURYBOX_LOG_LEVEL = "debug" || $EURYBOX_LOG_LEVEL = "message" || $EURYBOX_LOG_LEVEL = "warning" || $EURYBOX_LOG_LEVEL = "error" ]]
+      then
+         sudo echo "$NOW [EURYBOX][ERROR][$CATEGORY] $MESSAGE Stopping script execution " >> $FILE
+         exit 1
+      fi
+    ;;
+    * ) 
+      sudo echo "$NOW [EURYBOX][ERROR][SYNTAX] Bad log level message. Stopping script execution" >> $FILE
+      exit 1
+    ;;
+  esac
+}
+
+#########################
+# VM TECHNICAL COMMANDS #
+#########################
+
+#FIXME: extract function parameters to transfer to control section use and make functions more generic and reusable
+eurybox_create_archive_desc ()
+{
+  case ${EURYBOX_BACKUP_ARCHIVE[FORMAT]} in
+    "tar" ) TAR_OPTIONS="-Stv" ;;
+    "tar.gz" ) TAR_OPTIONS="-Stvz" ;;
+    "tar.bz2" ) TAR_OPTIONS="-Stvj" ;;
+  esac
+  STATUS=1234
+  case ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]} in
+    "SSH" )
+      DESTINATION=${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.desc
+      echo "$EURYBOX_CORPORATE archive description file" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      echo "ARCHIVE FILE: ${EURYBOX_BACKUP_ARCHIVE[NAME]}" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      echo "ARCHIVE FORMAT: ${EURYBOX_BACKUP_ARCHIVE[FORMAT]}" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      echo "ECC FILE: ${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[ECC]}" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      echo "ECC FORMAT: ${EURYBOX_BACKUP_ARCHIVE[ECC]}" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      echo "ECC LEVEL: ${EURYBOX_BACKUP_ARCHIVE[ECC_LEVEL]\%}" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      echo "HASH FILE: ${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[HASH]}" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      echo "HASH FORMAT: ${EURYBOX_BACKUP_ARCHIVE[HASH]}" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      echo "ARCHIVE TARGETS: ${EURYBOX_BACKUP_TARGETS[*]}" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      echo "ARCHIVE ENCRYPTED: ${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]}" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      if [[ ${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]} = "true" ]]
+      then
+        echo "ENCRYPTION ALGORITHM: ${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]}" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+        echo "ENCRYPTED ARCHIVE CONTENT:" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+    #FIXME: function to read archive with variable archive format required here
+        DESC_OUT=$((
+        (
+          ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat ${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}" | sudo openssl enc -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -d -k ${EURYBOX_BACKUP_ARCHIVE[PASSWORD]} | sudo tar ${TAR_OPTIONS} | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+        )) 2>&1)
+        STATUS=$?
+      else
+        echo "ARCHIVE CONTENT:" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      #FIXME: function to read archive with variable archive format required here
+        DESC_OUT=$((
+        (
+        ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat ${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}" | sudo tar ${TAR_OPTIONS} | ssh  -o "PasswordAuthentication no" -o "ConnectTimeout $EURYBOX_NETWORK_TIMEOUT" -o "ConnectionAttempts $EURYBOX_MAX_RETRY_ON_FAILURE" -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+        )) 2>&1)      
+        STATUS=$?
+      fi
+    ;;
+    "NFS" )
+      DESTINATION=${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.desc
+      eurybox_mount_backup_nfs
+      sudo echo "$EURYBOX_CORPORATE archive description file" >> $DESTINATION
+      sudo echo "ARCHIVE FILE: ${EURYBOX_BACKUP_ARCHIVE[NAME]}" >> $DESTINATION
+      sudo echo "ARCHIVE FORMAT: ${EURYBOX_BACKUP_ARCHIVE[FORMAT]}" >> $DESTINATION
+      sudo echo "ECC FILE: ${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[ECC]}" >> $DESTINATION
+      sudo echo "ECC FORMAT: ${EURYBOX_BACKUP_ARCHIVE[ECC]}" >> $DESTINATION
+      sudo echo "ECC LEVEL: ${EURYBOX_BACKUP_ARCHIVE[ECC_LEVEL]\%}" >> $DESTINATION
+      sudo echo "HASH FILE: ${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[HASH]}" >> $DESTINATION
+      sudo echo "HASH FORMAT: ${EURYBOX_BACKUP_ARCHIVE[HASH]}" >> $DESTINATION
+      sudo echo "ARCHIVE TARGETS: ${EURYBOX_BACKUP_TARGETS[*]}" >> $DESTINATION
+      sudo echo "ARCHIVE ENCRYPTED: ${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]}" >> $DESTINATION
+      if [[ ${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]} = "true" ]]
+      then
+        sudo echo "ENCRYPTION ALGORITHM: ${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]}" >> $DESTINATION
+        sudo echo "ENCRYPTED ARCHIVE CONTENT:" >> $DESTINATION
+      #FIXME: function to read archive with variable archive format required here
+        DESC_OUT=$((
+        (
+          sudo openssl enc -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -d -in ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]} -k ${EURYBOX_BACKUP_ARCHIVE[PASSWORD]} | sudo tar ${TAR_OPTIONS} >> $DESTINATION
+#          STATUS=$(( ${PIPESTATUS[0]} + ${PIPESTATUS[1]} ))
+        )) 2>&1)
+        STATUS=$?
+      else
+        sudo echo "ARCHIVE CONTENT:" >> $DESTINATION
+      #FIXME: function to read archive with variable archive format required here
+        DESC_OUT=$((
+        (
+          sudo tar ${TAR_OPTIONS}f ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]} >> $DESTINATION
+        )) 2>&1)
+        STATUS=$?
+      fi
+      eurybox_umount_backup_nfs
+    ;;
+    * )
+      eurybox_message_display error ARCHIVE "Unkown backup destination protocol: ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]}"
+    ;;
+  esac
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_message_display warning ARCHIVE "Archive description creation failed / error $STATUS --> $DESC_OUT"
+  else
+    eurybox_message_display message ARCHIVE "Archive description creation - OK"
+    eurybox_message_display debug ARCHIVE "$DESC_OUT"
+  fi
+}
+
+eurybox_check_archive_desc ()
+{
+  BKP_PROTOCOL=$1
+  BKP_DEST=$2
+  BKP_ARCH=$3
+  BKP_MOUNT=$4
+  BKP_PORT=$5
+  BKP_USER=$6
+  BKP_HOST=$7
+  case $BKP_PROTOCOL in
+    "SSH" )
+      DESTINATION=$BKP_DEST/$BKP_ARCH.desc
+      BKP_LIST=`ssh $EURYBOX_SSH_OPTIONS -p $BKP_PORT $BKP_USER@$BKP_HOST "ls $DESTINATION"`
+      STATUS=$?
+    ;;
+    "NFS" )
+      DESTINATION=$BKP_MOUNT/$BKP_ARCH.desc
+      eurybox_mount_backup_nfs
+      BKP_LIST=`sudo ls $EURYBOX_LS_OPTIONS $DESTINATION`
+      STATUS=$?
+      eurybox_umount_backup_nfs
+    ;;
+    * )
+      eurybox_message_display error ARCHIVE "Unkown backup destination protocol: $BKP_PROTOCOL"
+    ;;
+  esac
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_message_display error ARCHIVE "Archive description check failed: $BKP_LIST"
+  else
+    eurybox_message_display message ARCHIVE "Archive description found: $BKP_LIST"
+  fi
+}
+
+#FIXME: extract function parameters to transfer to control section use and make functions more generic and reusable
+eurybox_create_archive_tar ()
+{
+  if [[ $EURYBOX_LOG_LEVEL = "debug" ]]
+  then
+    TAR_OPTIONS="-v"
+  else
+    TAR_OPTIONS="-"
+  fi
+
+  case ${EURYBOX_BACKUP_ARCHIVE[FORMAT]} in
+    "tar" ) TAR_OPTIONS="${TAR_OPTIONS}Sc" ;;
+    "tar.gz" ) TAR_OPTIONS="${TAR_OPTIONS}Sc --use-compress-program=pigz" ;;
+    "tar.bz2" ) TAR_OPTIONS="${TAR_OPTIONS}Sc --use-compress-program=pbzip2 " ;;
+    #xz
+  esac
+  if [[ ${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]} = "true" ]]
+  then
+    EURYBOX_BACKUP_ARCHIVE[NAME]=${EURYBOX_BACKUP_ARCHIVE[NAME]}.enc
+  fi
+  case ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]} in
+    "SSH" ) 
+      if [[ ${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]} = "true" ]]
+      then
+        TAR_OUT=$((
+        (
+          sudo tar $TAR_OPTIONS ${EURYBOX_BACKUP_TARGETS[*]} | sudo openssl enc -salt -e -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -k ${EURYBOX_BACKUP_ARCHIVE[PASSWORD]} | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat > ${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}"
+          #STATUS=$(( ${PIPESTATUS[0]} + ${PIPESTATUS[1]} + ${PIPESTATUS[2]} ))
+          )) 2>&1)
+        STATUS=$?
+      else
+        TAR_OUT=$((
+        (
+          sudo tar $TAR_OPTIONS ${EURYBOX_BACKUP_TARGETS[*]} | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat > ${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}"
+          #STATUS=$(( ${PIPESTATUS[0]} + ${PIPESTATUS[1]} ))
+          )) 2>&1)
+        STATUS=$?
+      fi
+    ;;
+    "NFS" )
+      eurybox_mount_backup_nfs
+      if [[ ${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]} = "true" ]]
+      then
+        TAR_OUT=$((
+        (
+          sudo tar ${TAR_OPTIONS} ${EURYBOX_BACKUP_TARGETS[*]} | sudo openssl enc -salt -e -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -k ${EURYBOX_BACKUP_ARCHIVE[PASSWORD]} -out ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}
+#          STATUS=$(( ${PIPESTATUS[0]} + ${PIPESTATUS[1]} ))
+          )) 2>&1)
+        STATUS=$?
+      else
+        TAR_OUT=`sudo tar ${TAR_OPTIONS} -f ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]} ${EURYBOX_BACKUP_TARGETS[*]} 2>&1`
+        STATUS=$?
+      fi
+      eurybox_umount_backup_nfs
+    ;;
+    * )
+      eurybox_message_display error ARCHIVE "Unkown backup destination protocol: ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]}"
+    ;;
+  esac
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_message_display error ARCHIVE "Archive creation - failed / error: $STATUS --> $TAR_OUT. Continuing anyway"
+  else
+    eurybox_message_display message ARCHIVE "Archive creation - OK"
+    eurybox_message_display debug ARCHIVE "$TAR_OUT"
+  fi
+}
+
+#FIXME: extract function parameters to transfer to control section use and make functions more generic and reusable
+eurybox_create_archive_par ()
+{
+  case $EURYBOX_LOG_LEVEL in
+    "debug" ) PAR_OPTIONS="-v -v";;
+    "message" ) PAR_OPTIONS="-v";;
+    "warning" ) PAR_OPTIONS="-q";;
+    "error" ) PAR_OPTIONS="-q -q";;
+  esac
+  case ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]} in
+    SSH )
+      DESTINATION=${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[ECC]}
+      case "${EURYBOX_BACKUP_ARCHIVE[ECC]}" in
+        "par2" )
+#FIXME: par2 doesn't work on input, but need a file...
+#          ssh -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat ${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}" | sudo par2 c $PAR_OPTIONS -r${EURYBOX_BACKUP_ARCHIVE[ECC_LEVEL]} -t+ ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[ECC]} | ssh -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+#          STATUS=$?
+          PAR_OUT="Not Available Yet"
+          STATUS=1
+        ;;
+      * )
+          eurybox_message_display error ARCHIVE "Archive ecc format unknown: ${EURYBOX_BACKUP_ARCHIVE[HASH]}"
+        ;;
+      esac
+      ;;
+    NFS )
+      eurybox_mount_backup_nfs
+      case "${EURYBOX_BACKUP_ARCHIVE[ECC]}" in
+        "par2" )
+          PAR_OUT=`sudo par2 c $PAR_OPTIONS -r${EURYBOX_BACKUP_ARCHIVE[ECC_LEVEL]} -t+ ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[ECC]} ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]} 2>&1`
+          STATUS=$?
+        ;;
+        * )
+          eurybox_message_display error ARCHIVE "Archive ecc format unknown: ${EURYBOX_BACKUP_ARCHIVE[HASH]}"
+        ;;
+      esac
+      eurybox_umount_backup_nfs
+      ;;
+    * )
+      eurybox_message_display error ARCHIVE "Archive backup destination protocol unknown: ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]}"
+    ;;
+  esac
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_message_display warning ARCHIVE "Archive ecc creation - failed: $PAR_OUT. Continuing anyway"
+  else
+    eurybox_message_display message ARCHIVE "Archive ecc creation - OK"
+    eurybox_message_display debug ARCHIVE "$PAR_OUT"
+  fi
+}
+
+#FIXME: extract function parameters to transfer to control section use and make functions more generic and reusable
+eurybox_create_archive_sha ()
+{
+  case $EURYBOX_LOG_LEVEL in
+    "debug" ) SHA_OPTIONS="";;
+    "message" ) SHA_OPTIONS="";;
+    "warning" ) SHA_OPTIONS="";;
+    "error" ) SHA_OPTIONS="";;
+  esac
+  case ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]} in
+    SSH )
+      case "${EURYBOX_BACKUP_ARCHIVE[HASH]}" in
+        "sha256" )
+          SHA_OUT=`ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "sha256sum $SHA_OPTIONS ${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}* > ${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[HASH]}" 2<&1`
+        ;;
+        "sha512" )
+          SHA_OUT=`ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "sha512sum $SHA_OPTIONS ${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}* > ${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[HASH]}" 2<&1`
+        ;;
+        * )
+          eurybox_message_display error ARCHIVE "Archive hash format unknown: ${EURYBOX_BACKUP_ARCHIVE[HASH]}"
+        ;;
+      esac
+      STATUS=$?
+      ;;
+    NFS )
+      eurybox_mount_backup_nfs
+      case "${EURYBOX_BACKUP_ARCHIVE[HASH]}" in
+        "sha256" )
+          SHA_OUT=`sudo sh -c "sha256sum $SHA_OPTIONS ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}* > ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[HASH]}" 2<&1`
+          STATUS=$?
+        ;;
+        "sha512" )
+          SHA_OUT=`sudo sh -c "sha512sum $SHA_OPTIONS ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}* > ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[HASH]}" 2<&1`
+          STATUS=$?
+        ;;
+        * )
+          eurybox_message_display error ARCHIVE "Archive hash format unknown: ${EURYBOX_BACKUP_ARCHIVE[HASH]}"
+        ;;
+      esac
+      eurybox_umount_backup_nfs
+      ;;
+  esac
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_message_display warning ARCHIVE "Archive hash creation failed. Continuing anyway."
+  else
+    eurybox_message_display message ARCHIVE "Archive hash creation - OK"
+    eurybox_message_display debug ARCHIVE "$SHA_OUT"
+  fi
+}
+
+#1 arg required: permission mask
+eurybox_change_backup_files_permissions ()
+{
+  MASK=$1
+  case ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]} in
+    SSH )
+      MASK_OUT=`ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "chmod -R $MASK ${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}*" 2<&1`
+      STATUS=$?
+    ;;
+    NFS )
+      eurybox_mount_backup_nfs
+      MASK_OUT=`sudo sh -c "sudo chmod -R $MASK ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}*" 2<&1`
+      STATUS=$?
+      eurybox_umount_backup_nfs
+    ;;
+  esac
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_message_display warning CHMOD "Permissions change failed: $MASK_OUT"
+  else
+    eurybox_message_display message CHMOD "Permissions changed: $MASK_OUT"
+  fi
+}
+
+#FIXME: extract function parameters to transfer to control section use and make functions more generic and reusable
+eurybox_mount_backup_nfs ()
+{
+  if [[ !(-d ${EURYBOX_BACKUP_DESTINATION[MOUNT]}) ]]
+  then
+    sudo mkdir -p ${EURYBOX_BACKUP_DESTINATION[MOUNT]}
+    L_STATUS=$?
+    if [[ !($L_STATUS -eq 0) ]]
+    then
+      eurybox_message_display error MOUNT "Mount point ${EURYBOX_BACKUP_DESTINATION[MOUNT]} doesn't exists and folder creation failed"
+    else
+      eurybox_message_display message MOUNT "NFS local mountpoint ${EURYBOX_BACKUP_DESTINATION[MOUNT]} successfully created"
+    fi
+  fi
+  L_STATUS=1234
+  NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  while [[ !($L_STATUS -eq 0) && ($(grep ${EURYBOX_BACKUP_DESTINATION[MOUNT]} /proc/mounts) = "") && !($NB_TRY_LEFT -eq 0) ]]
+  do
+    #Is NFS server available?
+    NFS_OUT=`sudo nmap $EURYBOX_NMAP_OPTIONS -p 2049 ${EURYBOX_BACKUP_DESTINATION[HOST]} | grep open 2>&1`    
+    L_STATUS=$?
+    if [[ !($L_STATUS -eq 0) ]]
+    then
+      eurybox_message_display warning MOUNT "Backup destination NFS server unreacheable - trying to contact again in 5 seconds / $NB_TRY_LEFT left"
+      NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+      sleep 5
+    else
+      eurybox_message_display debug MOUNT "Backup destination NFS server reached"
+      NFS_OUT=`sudo rpcinfo -t ${EURYBOX_BACKUP_DESTINATION[HOST]} nfs 2>&1`
+      L_STATUS=$?
+      if [[ !($L_STATUS -eq 0) ]]
+      then
+        eurybox_message_display warning MOUNT "Backup destination NFS server not registred on destination - trying to contact again in 5 seconds / $NB_TRY_LEFT left: $NFS_OUT"
+        NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+        sleep 5
+      else
+        MOUNT_OUT=`sudo mount $EURYBOX_MNT_NFS_OPTIONS -t ${EURYBOX_BACKUP_DESTINATION[TYPE]} ${EURYBOX_BACKUP_DESTINATION[HOST]}:${EURYBOX_BACKUP_DESTINATION[PATH]} ${EURYBOX_BACKUP_DESTINATION[MOUNT]} 2>&1`
+        L_STATUS=$?
+        if [[ !($L_STATUS -eq 0) ]]
+        then
+          NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+          eurybox_message_display warning MOUNT "Backup destination NFS mount failed and target folder is empty - trying to mount again in 5 seconds / $NB_TRY_LEFT left: $MOUNT_OUT"
+          sleep 5
+        fi
+      fi
+    fi
+  done
+  if [[ $NB_TRY_LEFT -eq 0 ]]
+  then
+    eurybox_message_display error MOUNT "Backup destination NFS mount failed : $MOUNT_OUT"
+    eurybox_message_display debug MOUNT "$NFS_OUT"
+    eurybox_message_display debug MOUNT ""
+  else
+    eurybox_message_display message MOUNT "Backup destination NFS mount success"
+    eurybox_message_display debug MOUNT "$NFS_OUT"
+    eurybox_message_display debug MOUNT "$MOUNT_OUT"
+  fi
+}
+
+#FIXME: extract function parameters to transfer to control section use and make functions more generic and reusable
+eurybox_umount_backup_nfs ()
+{
+  L_STATUS=1234
+  NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  while [[ !($L_STATUS -eq 0) && !($(grep ${EURYBOX_BACKUP_DESTINATION[MOUNT]} /proc/mounts) = "") && !($NB_TRY_LEFT -eq 0) ]]
+  do
+    UMOUNT_OUT=`sudo umount ${EURYBOX_BACKUP_DESTINATION[MOUNT]} 2>&1`
+    L_STATUS=$?
+    if [[ !($L_STATUS -eq 0) ]]
+    then
+      NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+      eurybox_message_display warning MOUNT "Backup destination NFS unmount failed and target folder is not empty. Trying to unmount again in 5 seconds / $NB_TRY_LEFT left: $UMOUNT_OUT"
+      sleep 5
+    fi
+  done
+  if [[ $NB_TRY_LEFT -eq 0 ]]
+  then
+    eurybox_message_display error MOUNT "Backup destination NFS unmount failed: $UMOUNT_OUT"
+  else
+    eurybox_message_display message MOUNT "Backup destination NFS unmount success"
+    eurybox_message_display debug MOUNT "$UMOUNT_OUT"
+  fi
+}
+
+eurybox_detect_libvirt_env ()
+{
+  #Detect networks
+#  NETWORKS=( $(sudo virsh $EURYBOX_VIRSH_OPTIONS net-list --all | awk 'NR>2 {print $1}') )
+  NETWORKS=( $(sudo virsh $EURYBOX_VIRSH_OPTIONS net-list --all | awk '{print $1}') )
+  STATUS=$?
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_message_display error DETECT "Error on hypervisor network detection"
+  else
+    if [[ !($NETWORKS = "") ]]
+    then
+      EURYBOX_DETECTED_NETWORKS[NUM]=${#NETWORKS[@]}
+      eurybox_message_display message DETECT "Hypervisors networks - detection OK: ${EURYBOX_DETECTED_NETWORKS[NUM]} founds"
+      for (( NET_NUM=0;NET_NUM<${EURYBOX_DETECTED_NETWORKS[NUM]};NET_NUM++ ))
+      do
+        EURYBOX_DETECTED_NETWORKS[NAME,$NET_NUM]=${NETWORKS[NET_NUM]}
+        eurybox_message_display debug DETECT "Network detected: ${EURYBOX_DETECTED_NETWORKS[NAME,$NET_NUM]}"
+      done
+    else
+      eurybox_message_display warning DETECT "No hypervisor network detected"
+    fi
+  fi
+  #Detect domains
+  DOMAINS=( $(sudo virsh $EURYBOX_VIRSH_OPTIONS list --all | awk '{print $2}') )
+  STATUS=$?
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_message_display error DETECT "Error on hypervisor domain detection"
+  else
+    if [[ !($DOMAINS = "") ]]
+    then
+      EURYBOX_DETECTED_DOMAINS[NUM]=${#DOMAINS[@]}
+      eurybox_message_display message DETECT "Hypervisor domains (VM) - detection OK:  ${EURYBOX_DETECTED_DOMAINS[NUM]} founds"
+      for (( DOM_NUM=0;DOM_NUM<${EURYBOX_DETECTED_DOMAINS[NUM]};DOM_NUM++ ))
+      do
+        EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]=${DOMAINS[DOM_NUM]}
+        eurybox_message_display debug DETECT "VM detected: ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]}"
+      done
+    else
+      eurybox_message_display warning DETECT "No hypervisor domain detected"
+    fi
+  fi
+  #Detect disks associated to each domain
+  for (( DOM_NUM=0;DOM_NUM<${EURYBOX_DETECTED_DOMAINS[NUM]};DOM_NUM++ ))
+  do
+    DISKS=( $(sudo virsh $EURYBOX_VIRSH_OPTIONS domblklist ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]} | awk '($2 != "-") {print $2}') )
+    STATUS=$?
+    if [[ !($STATUS -eq 0) ]]
+    then
+      eurybox_message_display error DETECT "Error on VM disk detection: ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]}"
+    else
+    if [[ !($DISKS = "") ]]
+    then
+      EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NUM]=${#DISKS[@]}
+      eurybox_message_display message DETECT "VM ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]} - ${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NUM]} disks founds"
+      for (( DISK_NUM=0;DISK_NUM<${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NUM]};DISK_NUM++ ))
+      do
+        EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NAME,$DISK_NUM]=${DISKS[DISK_NUM]}
+        eurybox_message_display debug DETECT "VM ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]} - disk detected: ${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NAME,$DISK_NUM]}"
+      done
+      else
+        eurybox_message_display warning DETECT "No domain disk detected for VM ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]}"
+      fi
+    fi
+  done
+}
+
+#No arg required
+eurybox_export_hv_config ()
+{
+  #Dumping network configuration
+  for (( NET_NUM=0;NET_NUM<${EURYBOX_DETECTED_NETWORKS[NUM]};NET_NUM++ ))
+  do
+    DESTINATION=$EURYBOX_BACKUP_TMP_FOLDER/${EURYBOX_DETECTED_NETWORKS[NAME,$NET_NUM]}.libvirt.xml
+    sudo sh -c "virsh $EURYBOX_VIRSH_OPTIONS net-dumpxml ${EURYBOX_DETECTED_NETWORKS[NAME,$NET_NUM]} > $DESTINATION"
+    STATUS=$?
+    if [[ !($STATUS -eq 0) ]]
+    then
+      eurybox_message_display error EXPORT "Error on net ${EURYBOX_DETECTED_NETWORKS[NAME,$NET_NUM]} configuration dump"
+    else
+      eurybox_message_display debug EXPORT "Successfully dumped net ${EURYBOX_DETECTED_NETWORKS[NAME,$NET_NUM]} configuration to $DESTINATION"
+      EURYBOX_BACKUP_TARGETS[$((${#EURYBOX_BACKUP_TARGETS[@]}+1))]=$DESTINATION
+    fi
+  done
+  #Dumping storage configuration
+}
+
+#1 arg required: vm_name
+eurybox_export_vm_config ()
+{
+  NAME=$1
+  DESTINATION=$EURYBOX_BACKUP_TMP_FOLDER/$NAME.libvirt.xml
+  sudo sh -c "virsh $EURYBOX_VIRSH_OPTIONS dumpxml $NAME > $DESTINATION"
+  STATUS=$?
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_message_display error EXPORT "Error on vm $NAME configuration dump"
+  else
+    eurybox_message_display debug EXPORT "Successfully dumped vm $NAME configuration to $DESTINATION"
+    EURYBOX_BACKUP_TARGETS[$((${#EURYBOX_BACKUP_TARGETS[@]}+1))]=$DESTINATION
+  fi
+}
+
+eurybox_update_hv ()
+{
+  EURYBOX_HV_UPDATED=0
+  NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  while [[ ( $EURYBOX_HV_UPDATED -eq 0 ) && !( $NB_TRY_LEFT -eq 0 ) ]]
+  do
+    UPDATE_OUT=`sudo yum -y update 2>&1`
+    STATUS=$?
+    if [[ $STATUS -eq 0 ]]
+    then
+      EURYBOX_HV_UPDATED=1
+    else
+      eurybox_message_display debug UPDATE "Hypervisor update failed - trying again in 5 seconds / $NB_TRY_LEFT left: $UPDATE_OUT"
+      sleep 5
+    fi
+  done
+  if [[ $NB_TRY_LEFT -eq 0 ]]
+  then
+    eurybox_message_display error UPDATE "Hypervisor update failed - no success after $EURYBOX_MAX_RETRY_ON_FAILURE"
+  else
+    eurybox_message_display message UPDATE "Hypervisor update OK"
+    eurybox_message_display debug UPDATE "$UPDATE_OUT"
+  fi
+}
+
+eurybox_update_vm ()
+{
+  NAME=$1  
+  HOST=$2
+  USER=$3
+  PORT=$4
+  OS=$5
+  EURYBOX_VM_UPDATED=0
+  NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  while [[ ( $EURYBOX_VM_UPDATED -eq 0 ) && !( $NB_TRY_LEFT -eq 0 ) ]]
+  do
+    case $OS in
+      fedora20|fedora21|centos7|redhat7|centos6|redhat6|centos5|redhat5 )
+        UPDATE_OUT=`ssh $EURYBOX_SSH_OPTIONS -p $PORT $USER@$HOST "yum -y update" 2>&1`
+      ;;
+      fedora22|fedora23 )
+        UPDATE_OUT=`ssh $EURYBOX_SSH_OPTIONS -p $PORT $USER@$HOST "dnf -y update" 2>&1`
+      ;;
+      debian6|debian7|debian8|ubuntu12|ubuntu14|ubuntu16 )
+        UPDATE_OUT=`ssh $EURYBOX_SSH_OPTIONS -p $PORT $USER@$HOST "apt-get -y update && apt-get -y upgrade" 2>&1`
+      ;;
+      openbsd5 )
+        UPDATE_OUT=`echo "Not Implemented Yet"`
+      ;;
+      gentoo )
+        UPDATE_OUT=`ssh $EURYBOX_SSH_OPTIONS -p $PORT $USER@$HOST "emerge --sync && emerge -uDU --with-bdeps=y @world && emerge -av --depclean && emerge --update --newuse --deep @world && revdep-rebuild -v" 2>&1`
+      ;;
+      archlinux )
+        UPDATE_OUT=`ssh $EURYBOX_SSH_OPTIONS -p $PORT $USER@$HOST "pacman -Syy && pacman -Su" 2>&1`
+      ;;
+    esac
+    STATUS=$?
+    if [[ $STATUS -eq 0 ]]
+    then
+      EURYBOX_VM_UPDATED=1
+    else
+      eurybox_message_display debug UPDATE "VM $NAME - update failed - trying again in 5 seconds / $NB_TRY_LEFT left: $UPDATE_OUT"
+      sleep 5
+    fi
+  done
+  if [[ $NB_TRY_LEFT -eq 0 ]]
+  then
+    eurybox_message_display error UPDATE "VM $NAME - update failed - no success after $EURYBOX_MAX_RETRY_ON_FAILURE"
+  else
+    eurybox_message_display message UPDATE "VM $NAME - update OK"
+    eurybox_message_display debug UPDATE "$UPDATE_OUT"
+  fi
+}
+
+eurybox_update_local_repository ()
+{
+  eurybox_message_display warning STATUS "Not implemented yet"
+#eurybox_message_display message STATUS "Updating local repository"
+#reposync -n -d -p /local_repo/
+#eurybox_message_display message STATUS "Updating repository descriptions"
+##TODO: CHECK IF REPO EXIST AND CREATE (NO UPDATE) IF NOT + ADD VARIABLE REPOS LIST + SCRIPT AUTO DEPLOY
+#createrepo --update /local_repo/base/Packages
+#createrepo --update /local_repo/updates/Packages
+#createrepo --update /local_repo/extras/Packages
+#createrepo --update /local_repo/epel
+}
+
+eurybox_start_vm ()
+{
+  NAME=$1  
+  HOST=$2
+  USER=$3
+  PORT=$4
+  #Check if VM is operationnal (at network level)
+  EURYBOX_VM_STATE=0
+  EURYBOX_VM_STARTED=0
+  NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  while [[ ( $EURYBOX_VM_STATE -eq 0 ) && !( $NB_TRY_LEFT -eq 0 ) ]]
+  do
+    EURYBOX_VM_AVAILABLE=`ssh $EURYBOX_SSH_OPTIONS -p $PORT $USER@$HOST "touch eurybox_check_ssh_ok" 2>&1`
+    STATUS=$?
+    if [[ $STATUS -eq 0 ]]
+    then
+      EURYBOX_VM_STATE=1
+    else
+      if [[ $EURYBOX_VM_STARTED -eq 0 ]]
+      then
+        VIRSH_OUT=`sudo virsh $EURYBOX_VIRSH_OPTIONS start $NAME 2>&1`
+        STATUS=$?
+        if [[ !($STATUS -eq 0) ]]
+        then
+          VM_OUT=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | grep $NAME`
+          if [[ -z "$VM_OUT" ]]
+          then
+            eurybox_message_display warning START "Error on vm $NAME start : $VIRSH_OUT- trying again in 5 seconds / $NB_TRY_LEFT left"
+            NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+          else
+            eurybox_message_display debug START "VM $NAME already running - waiting for network contact"
+            EURYBOX_VM_STARTED=1
+            NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+          fi
+        else
+          EURYBOX_VM_STARTED=1
+          eurybox_message_display debug START "Successfully initiated vm $NAME start - waiting for network contact"
+          NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+        fi
+      else
+        NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+        eurybox_message_display debug START "VM $NAME - still unreachable - trying again in 5 seconds / $NB_TRY_LEFT left: $EURYBOX_VM_AVAILABLE"
+      fi
+      sleep 5
+    fi
+  done
+  if [[ $NB_TRY_LEFT -eq 0 ]]
+  then
+    eurybox_message_display error START "VM $NAME - start failed - no network contact after $EURYBOX_MAX_RETRY_ON_FAILURE"
+  else
+    eurybox_message_display debug START "VM $NAME - start OK"
+  fi
+}
+
+eurybox_shutdown_vm_acpi ()
+{
+  NAME=$1
+  #Waiting for the VM to be stopped
+  EURYBOX_VM_STATE=1
+  EURYBOX_VM_STOPPED=0
+  NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  while [[ ( $EURYBOX_VM_STATE -eq 1 ) && !( $NB_TRY_LEFT -eq 0 ) ]]
+  do
+   EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | grep $NAME`
+   if [ -z "$EURYBOX_VM_NAME" ]
+   then
+     EURYBOX_VM_STATE=0
+   else
+      if [[ $EURYBOX_VM_STOPPED -eq 0 ]]
+      then
+        sudo virsh $EURYBOX_VIRSH_OPTIONS shutdown $NAME
+        STATUS=$?
+        if [[ !($STATUS -eq 0) ]]
+        then
+          eurybox_message_display warning STOP "Error on vm $NAME stop - trying again in 5 seconds / $NB_TRY_LEFT left"
+          NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+        else
+          EURYBOX_VM_STOPPED=1
+          eurybox_message_display message STOP "Successfully initiated vm $NAME stop - waiting for vm poweroff"
+          NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+        fi
+      else
+        NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+        eurybox_message_display debug STOP "VM $NAME - still running - trying again in 5 seconds / $NB_TRY_LEFT left"
+      fi
+     sleep 5
+   fi
+  done
+  if [[ $NB_TRY_LEFT -eq 0 ]]
+  then
+    eurybox_message_display error STOP"VM $NAME - stop failed - VM still running after $EURYBOX_MAX_RETRY_ON_FAILURE: $EURYBOX_VM_NAME"
+  else
+    eurybox_message_display message STOP "VM $NAME - stop OK"
+  fi
+}
+
+eurybox_shutdown_vm_ssh ()
+{
+  NAME=$1  
+  HOST=$2
+  USER=$3
+  PORT=$4
+  EURYBOX_VM_STATE=1
+  EURYBOX_VM_STOPPED=0
+  NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  while [[ ( $EURYBOX_VM_STATE -eq 1 ) && !( $NB_TRY_LEFT -eq 0 ) ]]
+  do
+    EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | grep $NAME`
+    if [ -z "$EURYBOX_VM_NAME" ]
+    then
+      EURYBOX_VM_STATE=0
+    else
+      if [[ $EURYBOX_VM_STOPPED -eq 0 ]]
+      then
+        SSH_OUT=`ssh $EURYBOX_SSH_OPTIONS -p $PORT $USER@$HOST "halt -p >/dev/null &" 2>&1`
+        STATUS=$?
+        if [[ !($STATUS -eq 0) ]]
+        then
+          eurybox_message_display warning STOP "VM $NAME - stop failed - trying again in 5 seconds: $SSH_OUT / $NB_TRY_LEFT left"
+          NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+        else
+          EURYBOX_VM_STOPPED=1
+          eurybox_message_display message STOP "Successfully initiated vm $NAME stop - waiting for vm poweroff"
+          NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+        fi
+      else
+        NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+        eurybox_message_display debug STOP "VM $NAME - still running - trying again in 5 seconds / $NB_TRY_LEFT left"
+      fi
+     sleep 5
+    fi
+  done
+  if [[ $NB_TRY_LEFT -eq 0 ]]
+  then
+    eurybox_message_display error STOP "VM $NAME - stop failed - VM still running after $EURYBOX_MAX_RETRY_ON_FAILURE: $EURYBOX_VM_NAME"
+  else
+    eurybox_message_display message STOP "VM $NAME - stop OK"
+  fi
+}
+
+eurybox_exec_ssh_command ()
+{
+  HOST=$1
+  PORT=$2
+  USER=$3
+  CMD=$4
+  NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  STATUS=1234
+  while [[ !( $STATUS -eq 0 ) && !( $NB_TRY_LEFT -eq 0 ) ]]
+  do
+    CMD_OUT=`ssh -p ${PORT} ${USER}@${HOST} "${CMD}" 2>&1`
+    STATUS=$?
+    if [[ $STATUS -eq 0 ]]
+    then
+      eurybox_message_display message CMD "Command execution - OK: $CMD"
+      eurybox_message_display debug CMD "$CMD_OUT"
+    else
+      eurybox_message_display warning CMD "Command execution - failed - trying again in 5 seconds / $NB_TRY_LEFT left: $CMD_OUT"
+      NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+      sleep 5
+    fi
+  done
+  if [[ $NB_TRY_LEFT -eq 0 ]]
+  then
+    eurybox_message_display error CMD "Command execution - failed - $CMD: $CMD_OUT"
+  fi
+}
+
+eurybox_backup_add_config_disks ()
+{
+  for (( EURYBOX_SERVICES_NUM=1;EURYBOX_SERVICES_NUM<=EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM++ ))
+  do
+    EURYBOX_BACKUP_TARGETS[$((${#EURYBOX_BACKUP_TARGETS[@]}+1))]=${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,DISK]}
+    eurybox_message_display message PREPARE "VM ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]} - config file disk dependencies added to the list for backup: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,DISK]}"
+  done
+}
+
+eurybox_backup_prepare_services ()
+{
+  for (( DOM_NUM=0;DOM_NUM<${EURYBOX_DETECTED_DOMAINS[NUM]};DOM_NUM++ ))
+  do
+    DOM_FOUND=0
+    #Check if detected domains are in the list for export
+    for (( EURYBOX_SERVICES_NUM=1;EURYBOX_SERVICES_NUM<=EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM++ ))
+    do
+      if [[ "${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]}" = "${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}" ]]
+      then
+        DOM_FOUND=1
+        #Add attached disks to backup list
+        for (( DISK_NUM=0;DISK_NUM<${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NUM]};DISK_NUM++ ))
+        do
+          DISK_FOUND=0
+          #Check if not already present in backup list
+          for (( BKP_NUM=0;BKP_NUM<${#EURYBOX_BACKUP_TARGETS[@]};BKP_NUM++ ))
+          do
+            if [[ ${EURYBOX_BACKUP_TARGETS[${BKP_NUM}]} == *"${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NAME,$DISK_NUM]}"* ]]
+            then
+              DISK_FOUND=1
+              eurybox_message_display debug PREPARE "VM ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]} - detected disk ${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NAME,$DISK_NUM]} already in the list for backup: ${EURYBOX_BACKUP_TARGETS[${BKP_NUM}]}"
+            fi
+          done
+          if [[ $DISK_FOUND -eq 0 ]]
+          then
+            EURYBOX_BACKUP_TARGETS[$((${#EURYBOX_BACKUP_TARGETS[@]}+1))]=${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NAME,$DISK_NUM]}
+            eurybox_message_display message PREPARE "VM ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]} - detected disk added to the list for backup: ${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NAME,$DISK_NUM]}"
+          fi
+        done
+      fi
+    done
+    if [[ $DOM_FOUND -eq 0 ]]
+    then
+      eurybox_message_display warning PREPARE "Detected domain not in the list for backup: ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]}"
+    else
+      eurybox_message_display message PREPARE "VM ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]} - prepared for backup"
+      eurybox_export_vm_config ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]}
+    fi
+  done
+}
+
+###################
+# EURYBOX CONTROL #
+###################
+
+euryboxctrl_check_available_backups ()
+{
+  eurybox_check_archive_desc ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]} ${EURYBOX_BACKUP_DESTINATION[PATH]} "*" ${EURYBOX_BACKUP_DESTINATION[MOUNT]} ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]} ${EURYBOX_BACKUP_DESTINATION[HOST]}
+}
+
+euryboxctrl_check_all_vm_halted ()
+{
+  #Check that no vm at all are still running
+  EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | awk '($0 != "") {print $2}'`
+  if [[ !(-z "$EURYBOX_VM_NAME") ]]
+  then
+    eurybox_message_display error ARCHIVE "There are still VM running: $EURYBOX_VM_NAME"
+  fi
+}
+
+euryboxctrl_check_all_services_halted ()
+{
+  #Check that no vm at all are still running
+##  EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | awk '(NR>2) && ($0 != "") {print $2}'`
+
+  #Check that no services vm are still running
+  for ((EURYBOX_SERVICES_NUM=EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM>=1;EURYBOX_SERVICES_NUM--));
+  do
+    EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | grep ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}`
+    if [[ !(-z "$EURYBOX_VM_NAME") ]]
+    then
+      eurybox_message_display error ARCHIVE "There are still services VM running: $EURYBOX_VM_NAME"
+    fi
+  done
+}
+
+euryboxctrl_check_arch ()
+{
+  eurybox_message_display warning STATUS "Checking the archive file - NOT IMPLEMENTED YET"
+}
+
+euryboxctrl_check_eccf ()
+{
+  eurybox_message_display warning STATUS "Checking the error correcting codes files - NOT IMPLEMENTED YET"
+}
+
+euryboxctrl_check_desc ()
+{
+  eurybox_message_display warning STATUS "Checking the description file - NOT IMPLEMENTED YET"
+}
+
+euryboxctrl_check_hash ()
+{
+  eurybox_message_display warning STATUS "Checking the hash file - NOT IMPLEMENTED YET"
+}
+
+euryboxctrl_check_sign ()
+{
+  eurybox_message_display warning STATUS "Checking the signature file - NOT IMPLEMENTED YET"
+}
+
+
+euryboxctrl_create_arch ()
+{
+
+  #Create the archive
+  eurybox_message_display message STATUS "Creating the archive file"
+  case "${EURYBOX_BACKUP_ARCHIVE[FORMAT]}" in
+    tar|tar.gz|tar.bz2 )
+      eurybox_create_archive_tar
+    ;;
+    * )
+      eurybox_message_display error ARCHIVE "Archive format unknown: ${EURYBOX_BACKUP_ARCHIVE[FORMAT]}."
+    ;;
+  esac
+  
+  #Flush temporary directory
+  eurybox_flush_directory $EURYBOX_BACKUP_TMP_FOLDER
+}
+
+euryboxctrl_create_eccf ()
+{
+  #Create the error correcting file
+  eurybox_message_display message STATUS "Creating the error correcting codes files"
+  case "${EURYBOX_BACKUP_ARCHIVE[ECC]}" in
+    par2 )
+      eurybox_create_archive_par
+    ;;
+    * )
+      eurybox_message_display error ARCHIVE "Archive ECC type unknown: ${EURYBOX_BACKUP_ARCHIVE[ECC]}."
+    ;;
+  esac
+}
+
+euryboxctrl_create_desc ()
+{
+  #Create the archive description
+  eurybox_message_display message STATUS "Creating the description file"
+  eurybox_create_archive_desc
+}
+
+euryboxctrl_create_hash ()
+{
+  #Create the associated hash file
+  eurybox_message_display message STATUS "Creating the hash file"
+  case "${EURYBOX_BACKUP_ARCHIVE[HASH]}" in
+    sha256|sha512 )
+      eurybox_create_archive_sha
+    ;;
+    * )
+      eurybox_message_display error ARCHIVE "Archive HASH type unknown: ${EURYBOX_BACKUP_ARCHIVE[HASH]}."
+    ;;
+  esac
+}
+
+euryboxctrl_create_sign ()
+{
+  eurybox_message_display warning STATUS "Creating the signature file - NOT IMPLEMENTED YET"
+  #Create the associated signature file
+  #TODO: priv key / pub key infra mgt
+}
+
+euryboxctrl_exec_command_services ()
+{
+  for ((EURYBOX_SERVICES_NUM=1;EURYBOX_SERVICES_NUM<=$EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM++));
+  do
+    eurybox_message_display message STATUS "Executing commands on ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}"
+    for ((EURYBOX_EXEC_COMMAND_NUM=0;EURYBOX_EXEC_COMMAND_NUM<$EURYBOX_EXEC_COMMANDS_NUMBER;EURYBOX_EXEC_COMMAND_NUM++));
+    do
+      if [[ ${EURYBOX_EXEC_COMMANDS[$EURYBOX_EXEC_COMMAND_NUM,OS]} = "all" || ${EURYBOX_EXEC_COMMANDS[$EURYBOX_EXEC_COMMAND_NUM,OS]} = ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,OS]} ]]
+      then
+        eurybox_message_display message DEBUG "Executing command '${EURYBOX_EXEC_COMMANDS[$EURYBOX_EXEC_COMMAND_NUM,CMD]}'"
+        eurybox_exec_ssh_command ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,PORT]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,USER]} "${EURYBOX_EXEC_COMMANDS[$EURYBOX_EXEC_COMMAND_NUM,CMD]}"
+      else
+        eurybox_message_display message DEBUG "Skipping command '${EURYBOX_EXEC_COMMANDS[$EURYBOX_EXEC_COMMAND_NUM,CMD]}' for OS ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,OS]}"
+      fi
+    done
+  done
+}
+
+euryboxctrl_prepare_backup ()
+{
+  EURYBOX_BACKUP_ARCHIVE[NAME]=${EURYBOX_BACKUP_ARCHIVE[NAME]}_$(date +"%Y_%m_%d_%H_%M_%S").${EURYBOX_BACKUP_ARCHIVE[FORMAT]}
+  
+  #Detect environment
+  eurybox_detect_libvirt_env
+
+  #Add disks from config to backup list
+  eurybox_backup_add_config_disks
+
+  #Prepare services description and dependencies for backup
+  eurybox_backup_prepare_services
+
+  #Export hypervisor configuration
+  eurybox_export_hv_config
+}
+
+euryboxctrl_shutdown_services_ssh ()
+{
+  for ((EURYBOX_SERVICES_NUM=EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM>=1;EURYBOX_SERVICES_NUM--));
+  do
+    eurybox_message_display message STATUS "Shutting-Down via ssh ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]}"
+    eurybox_shutdown_vm_ssh ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,USER]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,PORT]}
+  done
+}
+
+euryboxctrl_shutdown_services_acpi ()
+{
+  #Shutdown all services VMs
+  for ((EURYBOX_SERVICES_NUM=EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM>=1;EURYBOX_SERVICES_NUM--));
+  do
+    eurybox_message_display message STATUS "Shutting-Down via ACPI ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}"
+    eurybox_shutdown_vm_acpi ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}
+  done
+}
+
+euryboxctrl_start_services ()
+{
+  for (( EURYBOX_SERVICES_NUM=1;EURYBOX_SERVICES_NUM<=EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM++ ))
+  do
+    eurybox_message_display message STATUS "Starting ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}"
+    eurybox_start_vm ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,USER]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,PORT]}
+  done
+}
+
+euryboxctrl_update_hypervisor ()
+{
+  eurybox_message_display message STATUS "Updating physical machine / hypervisor"
+  eurybox_update_hv
+}
+
+euryboxctrl_update_local_repository ()
+{
+  eurybox_message_display message STATUS "Updating local repository"
+  eurybox_update_local_repository
+}
+
+euryboxctrl_update_services ()
+{
+  eurybox_message_display message STATUS "Updating services / virtual machines"
+  for ((EURYBOX_SERVICES_NUM=1;EURYBOX_SERVICES_NUM<=$EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM++));
+  do
+    eurybox_message_display message STATUS "Updating ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}"
+    eurybox_update_vm ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,USER]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,PORT]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,OS]}
+  done
+}
+
+euryboxctrl_terminate_backup ()
+{
+  #Change archives permissions to read only
+  eurybox_change_backup_files_permissions ${EURYBOX_BACKUP_ARCHIVE[MASK]}
+}
+

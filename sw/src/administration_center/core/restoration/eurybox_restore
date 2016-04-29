@@ -1,0 +1,61 @@
+#!/bin/bash
+#2016/04/22: Guillaume REMBERT
+#EuryBOX restoration script
+
+START_TIME=$(date +%s)
+
+#########################
+# SCRIPT INITIALISATION #
+#########################
+
+#Get configuration variables and functions
+SCRIPT_COMMAND=$(readlink -f "$0")
+SCRIPT_ARGUMENTS="$@"
+SCRIPT_PATH=$(dirname "$SCRIPT_COMMAND")
+
+#Should not be changed except if you changed sw folder layout
+SCRIPT_CONF_PATH=$SCRIPT_PATH/../../../../../cfg/sw/eurybox.conf
+SCRIPT_FUNC_PATH=$SCRIPT_PATH/../../../eurybox.functions
+
+#Check and load ressources
+if [[ -f $SCRIPT_CONF_PATH && -f $SCRIPT_FUNC_PATH ]]
+then
+  source $SCRIPT_CONF_PATH
+  source $SCRIPT_FUNC_PATH
+  eurybox_message_display debug STATUS "Configuration and function scripts successfully sourced"
+else
+  echo "[EURYBOX][ERROR][RESSOURCES] Configuration file $SCRIPT_CONF_PATH or functions file $SCRIPT_FUNC_PATH not found. Stopping execution"
+  exit 1
+fi
+eurybox_message_display message STATUS "Checking configuration"
+eurybox_check_configuration RESTORE
+
+#Check input parameters
+eurybox_message_display message STATUS "Checking parameters"
+eurybox_check_arguments $SCRIPT_ARGUMENTS
+
+#Check environment
+eurybox_message_display message STATUS "Checking environment"
+eurybox_check_environment RESTORE
+
+eurybox_message_display message STATUS "$EURYBOX_CORPORATE restoration script started"
+
+########################
+# CLONE VM RESTORATION #
+########################
+
+#Discovering available backups
+euryboxctrl_check_available_backups
+
+
+################################
+# VM + HYPERVISOR RESTORATION #
+################################
+
+
+
+#Finished
+END_TIME=$(date +%s)
+DIFF_TIME=$(( $END_TIME - $START_TIME ))
+eurybox_message_display message STATUS "Restoration finished"
+eurybox_message_display message TIMING "Restoration took $DIFF_TIME seconds"
