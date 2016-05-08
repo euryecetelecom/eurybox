@@ -1,5 +1,4 @@
 #!/bin/bash
-#2016/04/22: Guillaume REMBERT
 #EuryBOX restoration script
 
 START_TIME=$(date +%s)
@@ -13,7 +12,7 @@ SCRIPT_COMMAND=$(readlink -f "$0")
 SCRIPT_ARGUMENTS="$@"
 SCRIPT_PATH=$(dirname "$SCRIPT_COMMAND")
 
-#Should not be changed except if you changed sw folder layout
+#Should not be changed except if sw folder layout is changed
 SCRIPT_CONF_PATH=$SCRIPT_PATH/../../../../../cfg/sw/eurybox.conf
 SCRIPT_FUNC_PATH=$SCRIPT_PATH/../../../eurybox.functions
 
@@ -22,40 +21,69 @@ if [[ -f $SCRIPT_CONF_PATH && -f $SCRIPT_FUNC_PATH ]]
 then
   source $SCRIPT_CONF_PATH
   source $SCRIPT_FUNC_PATH
-  eurybox_message_display debug STATUS "Configuration and function scripts successfully sourced"
+  eurybox_display_message debug STATUS "Configuration and function scripts successfully sourced"
 else
   echo "[EURYBOX][ERROR][RESSOURCES] Configuration file $SCRIPT_CONF_PATH or functions file $SCRIPT_FUNC_PATH not found. Stopping execution"
   exit 1
 fi
-eurybox_message_display message STATUS "Checking configuration"
+eurybox_display_message message STATUS "Checking configuration"
 eurybox_check_configuration RESTORE
 
 #Check input parameters
-eurybox_message_display message STATUS "Checking parameters"
+eurybox_display_message message STATUS "Checking parameters"
 eurybox_check_arguments $SCRIPT_ARGUMENTS
 
 #Check environment
-eurybox_message_display message STATUS "Checking environment"
+eurybox_display_message message STATUS "Checking environment"
 eurybox_check_environment RESTORE
 
-eurybox_message_display message STATUS "$EURYBOX_CORPORATE restoration script started"
+eurybox_display_message message STATUS "$EURYBOX_CORPORATE restoration script started"
 
+######################
+# ARCHIVES DISCOVERY #
+######################
+
+#Discover available archives
+euryboxctrl_discover_available_archives
+
+#Select archive to be restored
+euryboxctrl_select_restore_target
+
+#Check integrity of archive file
+euryboxctrl_check_desc
+euryboxctrl_check_hash
+euryboxctrl_check_eccf
+euryboxctrl_check_arch
+
+case $EURYBOX_RESTORE_TYPE in
+  cloned_vm )
 ########################
 # CLONE VM RESTORATION #
 ########################
+    eurybox_display_message warning STATUS "CLONE VM RESTORE NOT AVAILABLE YET"
+  ;;
+  cloned_full )
+#####################################
+# CLONE VM + HYPERVISOR RESTORATION #
+#####################################
+    eurybox_display_message warning STATUS "CLONE VM + HV RESTORE NOT AVAILABLE YET"
+  ;;
+  full )
+########################################
+# FULL SYSTEM RESTORATION + VM REFRESH #
+########################################
+    eurybox_display_message warning STATUS "FULL RESTORE NOT AVAILABLE YET"
+  ;;
+  * )
+    eurybox_display_message warning STATUS "Unknown restoration type: $EURYBOX_RESTORE_TYPE"
+  ;;
+esac
 
-#Discovering available backups
-euryboxctrl_check_available_backups
-
-
-################################
-# VM + HYPERVISOR RESTORATION #
-################################
 
 
 
 #Finished
 END_TIME=$(date +%s)
 DIFF_TIME=$(( $END_TIME - $START_TIME ))
-eurybox_message_display message STATUS "Restoration finished"
-eurybox_message_display message TIMING "Restoration took $DIFF_TIME seconds"
+eurybox_display_message message STATUS "Restoration finished"
+eurybox_display_message message TIMING "Restoration took $DIFF_TIME seconds"

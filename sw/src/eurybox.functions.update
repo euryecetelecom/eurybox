@@ -1,0 +1,97 @@
+#!/bin/bash
+#EuryBOX update functions file
+
+#Desc: update hypervisor
+#FIXME: implement distrib specific update command (with one arg)
+#No arg required
+eurybox_update_hv ()
+{
+  EURYBOX_HV_UPDATED=0
+  NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  while [[ ( $EURYBOX_HV_UPDATED -eq 0 ) && !( $NB_TRY_LEFT -eq 0 ) ]]
+  do
+    UPDATE_OUT=`sudo yum -y update 2>&1`
+    STATUS=$?
+    if [[ $STATUS -eq 0 ]]
+    then
+      EURYBOX_HV_UPDATED=1
+    else
+      eurybox_display_message debug UPDATE "Hypervisor update failed - trying again in 5 seconds / $NB_TRY_LEFT left: $UPDATE_OUT"
+      sleep 5
+    fi
+  done
+  if [[ $NB_TRY_LEFT -eq 0 ]]
+  then
+    eurybox_display_message error UPDATE "Hypervisor update failed - no success after $EURYBOX_MAX_RETRY_ON_FAILURE"
+  else
+    eurybox_display_message message UPDATE "Hypervisor update OK"
+    eurybox_display_message debug UPDATE "$UPDATE_OUT"
+  fi
+}
+
+#Desc: update vm
+#5 args required: vm_name vm_host vm_user vm_ssh_port operating_system
+eurybox_update_vm ()
+{
+  NAME=$1  
+  HOST=$2
+  USER=$3
+  PORT=$4
+  OS=$5
+  EURYBOX_VM_UPDATED=0
+  NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  while [[ ( $EURYBOX_VM_UPDATED -eq 0 ) && !( $NB_TRY_LEFT -eq 0 ) ]]
+  do
+    case $OS in
+      fedora20|fedora21|centos7|redhat7|centos6|redhat6|centos5|redhat5 )
+        UPDATE_OUT=`ssh $EURYBOX_SSH_OPTIONS -p $PORT $USER@$HOST "yum -y update" 2>&1`
+      ;;
+      fedora22|fedora23 )
+        UPDATE_OUT=`ssh $EURYBOX_SSH_OPTIONS -p $PORT $USER@$HOST "dnf -y update" 2>&1`
+      ;;
+      debian6|debian7|debian8|ubuntu12|ubuntu14|ubuntu16 )
+        UPDATE_OUT=`ssh $EURYBOX_SSH_OPTIONS -p $PORT $USER@$HOST "apt-get -y update && apt-get -y upgrade" 2>&1`
+      ;;
+      openbsd5 )
+        UPDATE_OUT=`echo "Not Implemented Yet"`
+      ;;
+      gentoo )
+        UPDATE_OUT=`ssh $EURYBOX_SSH_OPTIONS -p $PORT $USER@$HOST "emerge --sync && emerge -uDU --with-bdeps=y @world && emerge -av --depclean && emerge --update --newuse --deep @world && revdep-rebuild -v" 2>&1`
+      ;;
+      archlinux )
+        UPDATE_OUT=`ssh $EURYBOX_SSH_OPTIONS -p $PORT $USER@$HOST "pacman -Syy && pacman -Su" 2>&1`
+      ;;
+    esac
+    STATUS=$?
+    if [[ $STATUS -eq 0 ]]
+    then
+      EURYBOX_VM_UPDATED=1
+    else
+      eurybox_display_message debug UPDATE "VM $NAME - update failed - trying again in 5 seconds / $NB_TRY_LEFT left: $UPDATE_OUT"
+      sleep 5
+    fi
+  done
+  if [[ $NB_TRY_LEFT -eq 0 ]]
+  then
+    eurybox_display_message error UPDATE "VM $NAME - update failed - no success after $EURYBOX_MAX_RETRY_ON_FAILURE"
+  else
+    eurybox_display_message message UPDATE "VM $NAME - update OK"
+    eurybox_display_message debug UPDATE "$UPDATE_OUT"
+  fi
+}
+
+#Desc: update local repository
+#No arg required
+eurybox_update_local_repository ()
+{
+  eurybox_display_message warning UPDATE "Not implemented yet"
+#eurybox_display_message message STATUS "Updating local repository"
+#reposync -n -d -p /local_repo/
+#eurybox_display_message message STATUS "Updating repository descriptions"
+##TODO: CHECK IF REPO EXIST AND CREATE (NO UPDATE) IF NOT + ADD VARIABLE REPOS LIST + SCRIPT AUTO DEPLOY
+#createrepo --update /local_repo/base/Packages
+#createrepo --update /local_repo/updates/Packages
+#createrepo --update /local_repo/extras/Packages
+#createrepo --update /local_repo/epel
+}
+

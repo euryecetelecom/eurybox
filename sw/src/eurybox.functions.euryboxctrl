@@ -1,0 +1,226 @@
+#!/bin/bash
+#EuryBOX control functions file
+
+euryboxctrl_check_all_vm_halted ()
+{
+  #Check that no vm at all are still running
+  EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | awk '($0 != "") {print $2}'`
+  if [[ !(-z "$EURYBOX_VM_NAME") ]]
+  then
+    eurybox_display_message error EURYBOXCTRL "There are still VM running: $EURYBOX_VM_NAME"
+  fi
+}
+
+euryboxctrl_check_all_services_halted ()
+{
+  #Check that no vm at all are still running
+##  EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | awk '(NR>2) && ($0 != "") {print $2}'`
+
+  #Check that no services vm are still running
+  for ((EURYBOX_SERVICES_NUM=EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM>=1;EURYBOX_SERVICES_NUM--));
+  do
+    EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | grep ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}`
+    if [[ !(-z "$EURYBOX_VM_NAME") ]]
+    then
+      eurybox_display_message error EURYBOXCTRL "There are still services VM running: $EURYBOX_VM_NAME"
+    fi
+  done
+}
+
+euryboxctrl_check_arch ()
+{
+  eurybox_display_message warning EURYBOXCTRL "Checking the archive file - NOT IMPLEMENTED YET"
+}
+
+euryboxctrl_check_desc ()
+{
+  eurybox_display_message warning EURYBOXCTRL "Checking the description file - NOT IMPLEMENTED YET"
+}
+
+euryboxctrl_check_eccf ()
+{
+  eurybox_display_message warning EURYBOXCTRL "Checking the error correcting codes files - NOT IMPLEMENTED YET"
+}
+
+euryboxctrl_check_hash ()
+{
+  eurybox_display_message warning EURYBOXCTRL "Checking the hash file - NOT IMPLEMENTED YET"
+}
+
+euryboxctrl_check_sign ()
+{
+  eurybox_display_message warning EURYBOXCTRL "Checking the signature file - NOT IMPLEMENTED YET"
+}
+
+euryboxctrl_create_arch ()
+{
+
+  #Create the archive
+  eurybox_display_message message EURYBOXCTRL "Creating the archive file"
+  case "${EURYBOX_BACKUP_ARCHIVE[FORMAT]}" in
+    tar|tar.gz|tar.bz2 )
+      eurybox_create_archive_tar
+    ;;
+    * )
+      eurybox_display_message error EURYBOXCTRL "Archive format unknown: ${EURYBOX_BACKUP_ARCHIVE[FORMAT]}."
+    ;;
+  esac
+  
+  #Flush temporary directory
+  eurybox_flush_directory $EURYBOX_BACKUP_TMP_FOLDER
+}
+
+euryboxctrl_create_desc ()
+{
+  #Create the archive description
+  eurybox_display_message message EURYBOXCTRL "Creating the description file"
+  eurybox_create_archive_desc
+}
+
+euryboxctrl_create_eccf ()
+{
+  #Create the error correcting file
+  eurybox_display_message message EURYBOXCTRL "Creating the error correcting codes files"
+  case "${EURYBOX_BACKUP_ARCHIVE[ECC]}" in
+    par2 )
+      eurybox_create_archive_par
+    ;;
+    * )
+      eurybox_display_message error EURYBOXCTRL "Archive ECC type unknown: ${EURYBOX_BACKUP_ARCHIVE[ECC]}."
+    ;;
+  esac
+}
+
+euryboxctrl_create_hash ()
+{
+  #Create the associated hash file
+  eurybox_display_message message EURYBOXCTRL "Creating the hash file"
+  case "${EURYBOX_BACKUP_ARCHIVE[HASH]}" in
+    sha256|sha512 )
+      eurybox_create_archive_sha
+    ;;
+    * )
+      eurybox_display_message error EURYBOXCTRL "Archive HASH type unknown: ${EURYBOX_BACKUP_ARCHIVE[HASH]}."
+    ;;
+  esac
+}
+
+euryboxctrl_create_sign ()
+{
+  eurybox_display_message warning EURYBOXCTRL "Creating the signature file - NOT IMPLEMENTED YET"
+  #Create the associated signature file
+  #TODO: priv key / pub key infra mgt
+}
+
+euryboxctrl_discover_available_archives ()
+{
+  eurybox_detect_archives ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]} ${EURYBOX_BACKUP_DESTINATION[PATH]} "*" ${EURYBOX_BACKUP_DESTINATION[MOUNT]} ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]} ${EURYBOX_BACKUP_DESTINATION[HOST]}
+  eurybox_display_detected_archives
+}
+
+euryboxctrl_exec_command_services ()
+{
+  for ((EURYBOX_SERVICES_NUM=1;EURYBOX_SERVICES_NUM<=$EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM++));
+  do
+    eurybox_display_message message EURYBOXCTRL "Executing commands on ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}"
+    for ((EURYBOX_EXEC_COMMAND_NUM=0;EURYBOX_EXEC_COMMAND_NUM<$EURYBOX_EXEC_COMMANDS_NUMBER;EURYBOX_EXEC_COMMAND_NUM++));
+    do
+      if [[ ${EURYBOX_EXEC_COMMANDS[$EURYBOX_EXEC_COMMAND_NUM,OS]} = "all" || ${EURYBOX_EXEC_COMMANDS[$EURYBOX_EXEC_COMMAND_NUM,OS]} = ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,OS]} ]]
+      then
+        eurybox_display_message message EURYBOXCTRL "Executing command '${EURYBOX_EXEC_COMMANDS[$EURYBOX_EXEC_COMMAND_NUM,CMD]}'"
+        eurybox_exec_ssh_command ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,PORT]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,USER]} "${EURYBOX_EXEC_COMMANDS[$EURYBOX_EXEC_COMMAND_NUM,CMD]}"
+      else
+        eurybox_display_message message EURYBOXCTRL "Skipping command '${EURYBOX_EXEC_COMMANDS[$EURYBOX_EXEC_COMMAND_NUM,CMD]}' for OS ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,OS]}"
+      fi
+    done
+  done
+}
+
+euryboxctrl_prepare_backup ()
+{
+  EURYBOX_BACKUP_ARCHIVE[NAME]=${EURYBOX_BACKUP_ARCHIVE[NAME]}_$(date +"%Y_%m_%d_%H_%M_%S")
+  
+  #Detect environment
+  eurybox_detect_libvirt_env
+
+  #Add disks from config to backup list
+  eurybox_backup_add_config_disks
+
+  #Prepare services description and dependencies for backup
+  eurybox_backup_prepare_services
+
+  case $EURYBOX_BACKUP_TYPE in
+    full_cold|full_hot )
+      #Export hypervisor configuration
+      eurybox_export_hv_config
+    ;;
+  esac
+}
+
+euryboxctrl_select_restore_target ()
+{
+  if [[ $EURYBOX_RESTORE_TARGET_ACQUISITION = "interactive" ]]
+  then
+    eurybox_configure_interactive_restoration_target
+    eurybox_detect_archive_content ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]} ${EURYBOX_BACKUP_DESTINATION[PATH]} "${EURYBOX_BACKUP_ARCHIVE[NAME]}.desc" ${EURYBOX_BACKUP_DESTINATION[MOUNT]} ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]} ${EURYBOX_BACKUP_DESTINATION[HOST]}
+  else
+    eurybox_display_message warning EURYBOXCTRL "Unknown restoration target acquisition type: $EURYBOX_RESTORE_TARGET_ACQUISITION"
+  fi
+}
+
+euryboxctrl_shutdown_services_ssh ()
+{
+  for ((EURYBOX_SERVICES_NUM=EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM>=1;EURYBOX_SERVICES_NUM--));
+  do
+    eurybox_display_message message EURYBOXCTRL "Shutting-Down via ssh ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]}"
+    eurybox_vm_shutdown_ssh ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,USER]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,PORT]}
+  done
+}
+
+euryboxctrl_shutdown_services_acpi ()
+{
+  #Shutdown all services VMs
+  for ((EURYBOX_SERVICES_NUM=EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM>=1;EURYBOX_SERVICES_NUM--));
+  do
+    eurybox_display_message message EURYBOXCTRL "Shutting-Down via ACPI ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}"
+    eurybox_vm_shutdown_acpi ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}
+  done
+}
+
+euryboxctrl_start_services ()
+{
+  for (( EURYBOX_SERVICES_NUM=1;EURYBOX_SERVICES_NUM<=EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM++ ))
+  do
+    eurybox_display_message message EURYBOXCTRL "Starting ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}"
+    eurybox_vm_start ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,USER]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,PORT]}
+  done
+}
+
+euryboxctrl_update_hypervisor ()
+{
+  eurybox_display_message message EURYBOXCTRL "Updating physical machine / hypervisor"
+  eurybox_update_hv
+}
+
+euryboxctrl_update_local_repository ()
+{
+  eurybox_display_message message EURYBOXCTRL "Updating local repository"
+  eurybox_update_local_repository
+}
+
+euryboxctrl_update_services ()
+{
+  eurybox_display_message message EURYBOXCTRL "Updating services / virtual machines"
+  for ((EURYBOX_SERVICES_NUM=1;EURYBOX_SERVICES_NUM<=$EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM++));
+  do
+    eurybox_display_message message EURYBOXCTRL "Updating ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}"
+    eurybox_update_vm ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,USER]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,PORT]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,OS]}
+  done
+}
+
+euryboxctrl_terminate_backup ()
+{
+  #Change archives permissions to read only
+  eurybox_change_files_permissions ${EURYBOX_BACKUP_ARCHIVE[MASK]}
+}
+

@@ -1,0 +1,402 @@
+#!/bin/bash
+#EuryBOX check functions file
+
+#TODO: Implement lockfile and check if not already running
+
+
+#Desc: check the input arguments
+#TODO: implement arguments usage (debug mode / config file ...) and checking
+eurybox_check_arguments ()
+{
+  eurybox_display_message message CHECK "Script arguments: $1"
+}
+
+#Desc: verify the existence on the host of commands
+#1 arg min required: command [command] [command] ...
+eurybox_check_command()
+{
+  local -i not_found
+  for cmd; do
+    command -v >&- "$cmd" || { 
+         eurybox_display_message warning CHECK $"Command $cmd is not found"
+            let not_found++
+    }
+  done
+  (( not_found == 0 )) || {
+    eurybox_display_message error CHECK "Please install first dependencies listed above to use EuryBOX scripts"
+  }
+}
+
+#Desc: verify the configuration file and mandatory variables initialisation
+#1 arg can be supplied as script type (BACKUP/UPDATE/EXEC_COMMAND) to add extra checks
+#Conf file needs to be sourced before
+eurybox_check_configuration ()
+{
+  SCRIPT_TYPE=$1
+  
+  #Checking script execution parameters
+  if [[ -z $EURYBOX_CORPORATE || -z $EURYBOX_LOG_LEVEL || -z $EURYBOX_PARALLELISM_LEVEL ]]
+  then
+    eurybox_display_message warning CHECK "Script execution parameters not set. Continuing script execution in debug mode."
+    EURYBOX_CORPORATE="EURYECE TELECOM"
+    EURYBOX_LOG_LEVEL=debug
+    EURYBOX_PARALLELISM_LEVEL=2
+  else
+    eurybox_display_message message CHECK "Script execution parameters:"
+    eurybox_display_message message CHECK "Corporate: $EURYBOX_CORPORATE"
+    eurybox_display_message message CHECK "Log level: $EURYBOX_LOG_LEVEL"
+    eurybox_display_message message CHECK "Parallelism level: $EURYBOX_PARALLELISM_LEVEL"
+  fi
+
+  #Checking environment parameters
+  if [[ -z $EURYBOX_DOMAIN || -z $EURYBOX_SERVICES_NUMBER || ${#EURYBOX_SERVICES[@]} -eq 0 || ${#EURYBOX_HYPERVISOR[@]} -eq 0 ]]
+  then
+    eurybox_display_message error CHECK "Environment parameters not set: Domaine/$EURYBOX_DOMAIN Services/${EURYBOX_SERVICES[*]} Num/$EURYBOX_SERVICES_NUMBER Hypervisor/${EURYBOX_HYPERVISOR[*]}"
+  else
+    eurybox_display_message message CHECK "Script environment parameters:"
+    eurybox_display_message message CHECK "Domain: $EURYBOX_DOMAIN"
+    eurybox_display_message message CHECK "Hypervisor: ${EURYBOX_HYPERVISOR[*]}"
+    for ((EURYBOX_SERVICES_NUM=1;EURYBOX_SERVICES_NUM<=$EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM++));
+    do
+      eurybox_display_message message CHECK "Target service: host:${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]}, name: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}, ssh user: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,USER]}, ssh port: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,PORT]}, OS: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,OS]}, disks: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,DISK]}"
+    done
+    eurybox_display_message debug CHECK "Services number: $EURYBOX_SERVICES_NUMBER"
+  fi
+  #Checking distribution parameters
+  if [[ -z $EURYBOX_DISTRIB_TYPE || -z $EURYBOX_DISTRIB_VERSION || -z $EURYBOX_DISTRIB_MAC_TYPE ]]
+  then
+    eurybox_display_message error CHECK "Distribution parameters not set: Type/$EURYBOX_DISTRIB_TYPE Version/$EURYBOX_DISTRIB_VERSION MAC Type:$EURYBOX_DISTRIB_MAC_TYPE"
+  else
+    case $EURYBOX_DISTRIB_TYPE in
+      centos|redhat ) 
+        if [[ $EURYBOX_DISTRIB_VERSION = "6.0" || $EURYBOX_DISTRIB_VERSION = "6.1" || $EURYBOX_DISTRIB_VERSION = "6.2" || $EURYBOX_DISTRIB_VERSION = "6.3" || $EURYBOX_DISTRIB_VERSION = "6.4" || $EURYBOX_DISTRIB_VERSION = "6.5" || $EURYBOX_DISTRIB_VERSION = "6.6" || $EURYBOX_DISTRIB_VERSION = "6.7" || $EURYBOX_DISTRIB_VERSION = "7.0" || $EURYBOX_DISTRIB_VERSION = "7.1" || $EURYBOX_DISTRIB_VERSION = "7.2" ]]
+        then
+          eurybox_display_message message CHECK "Distribution configured: $EURYBOX_DISTRIB_TYPE - version $EURYBOX_DISTRIB_VERSION"
+        else
+          eurybox_display_message error CHECK "Distribution $EURYBOX_DISTRIB_TYPE - unsupported version: $EURYBOX_DISTRIB_VERSION - please use version 6.x or 7.x"
+        fi
+      ;;
+      * )
+        eurybox_display_message error CHECK "Unsupported distribution: $EURYBOX_DISTRIB_TYPE - please use centos or redhat distribution"
+      ;;
+    esac
+    case $EURYBOX_DISTRIB_MAC_TYPE in
+      selinux|none ) 
+         eurybox_display_message message CHECK "Distribution mandatory access control type configured: $EURYBOX_DISTRIB_TYPE - version $EURYBOX_DISTRIB_VERSION"
+      ;;
+      apparmor|* )
+        eurybox_display_message error CHECK "Unsupported mandatory access control type: $EURYBOX_DISTRIB_MAC_TYPE - please use selinux or none"
+      ;;
+    esac
+  fi
+# || $SCRIPT_TYPE = "RESTORE"
+  if [[ $SCRIPT_TYPE = "BACKUP" ]]
+  then
+    #Checking backup parameters
+    if [[ -z $EURYBOX_BACKUP_TYPE || ${#EURYBOX_BACKUP_DESTINATION[@]} -eq 0 || ${#EURYBOX_BACKUP_ARCHIVE[@]} -eq 0 || ${#EURYBOX_BACKUP_TARGETS[@]} -eq 0 ]]
+    then
+      eurybox_display_message error CHECK "Backup parameters not set: Cold/$EURYBOX_BACKUP_COLD Hot/$EURYBOX_BACKUP_HOT Destination/${EURYBOX_BACKUP_DESTINATION[*]} Archive/${EURYBOX_BACKUP_ARCHIVE[*]} Target/${EURYBOX_BACKUP_TARGETS[*]}"
+    else
+      eurybox_display_message message CHECK "Backup parameters:"
+      eurybox_display_message message CHECK "Cold backup enabled: $EURYBOX_BACKUP_COLD"
+      eurybox_display_message message CHECK "Hot backup enabled: $EURYBOX_BACKUP_HOT"
+      eurybox_display_message message CHECK "Backup destination: ${EURYBOX_BACKUP_DESTINATION[*]}"
+      if [[ $EURYBOX_LOG_LEVEL = "debug" ]]
+      then
+#NB: will display the encryption passphrase in the logs if debug mode selected
+        eurybox_display_message debug CHECK "Archive parameters: ${EURYBOX_BACKUP_ARCHIVE[*]}"
+      fi
+      eurybox_display_message message CHECK "Archive targets: ${EURYBOX_BACKUP_TARGETS[*]}"
+    fi
+  fi
+##Make sure pipe individual output exit status are available
+##set -o pipefail
+  #Initialize tools options
+  case ${EURYBOX_HYPERVISOR[TYPE]} in
+    qemu )
+      EURYBOX_VIRSH_OPTIONS="-c qemu:///system"
+    ;;
+    xen )
+      EURYBOX_VIRSH_OPTIONS="-c xen:///"
+    ;;
+    * )
+      eurybox_display_message error CHECK "Bad hypervisor type: ${EURYBOX_HYPERVISOR[TYPE]}"
+    ;;
+  esac
+  EURYBOX_SSH_OPTIONS="-oPasswordAuthentication=no -oConnectTimeout=$EURYBOX_NETWORK_TIMEOUT -oConnectionAttempts=$EURYBOX_MAX_RETRY_ON_FAILURE"
+  EURYBOX_NMAP_OPTIONS="--host-timeout $EURYBOX_NETWORK_TIMEOUT --max-retries $EURYBOX_MAX_RETRY_ON_FAILURE"
+  EURYBOX_LS_OPTIONS="-x"
+  EURYBOX_MNT_NFS_OPTIONS="-o hard,retry=$EURYBOX_MAX_RETRY_ON_FAILURE,rsize=8192,wsize=8192,timeo=${EURYBOX_NETWORK_TIMEOUT}0"
+  case $EURYBOX_LOG_LEVEL in
+    debug )
+      set -xv
+      EURYBOX_SSH_OPTIONS+=" -oLogLevel=debug"
+      EURYBOX_NMAP_OPTIONS+=" -d9 -v3"
+      EURYBOX_LS_OPTIONS+=" -a"
+      EURYBOX_MNT_NFS_OPTIONS+=" -v"
+      EURYBOX_VIRSH_OPTIONS+=" -q -d 0"
+    ;;
+    verbose )
+      set -v
+      EURYBOX_SSH_OPTIONS+=" -oLogLevel=verbose"
+      EURYBOX_NMAP_OPTIONS+=" -d0 -v2"
+      EURYBOX_LS_OPTIONS+=" -l"
+      EURYBOX_MNT_NFS_OPTIONS+=" -v"
+      EURYBOX_VIRSH_OPTIONS+=" -q -d 2"
+    ;;
+    info )
+      EURYBOX_SSH_OPTIONS+=" -oLogLevel=info"
+      EURYBOX_NMAP_OPTIONS+=" -d0 -v"
+      EURYBOX_LS_OPTIONS+=" -l"
+      EURYBOX_VIRSH_OPTIONS+=" -q -d 4"
+    ;;
+    warning )
+      EURYBOX_SSH_OPTIONS+=" -oLogLevel=info"
+      EURYBOX_NMAP_OPTIONS+=" -d0 -v0"
+      EURYBOX_VIRSH_OPTIONS+=" -q"
+    ;;
+    error )
+      EURYBOX_SSH_OPTIONS+=" -oLogLevel=error"
+      EURYBOX_NMAP_OPTIONS+=" -d0 -v1"
+      EURYBOX_VIRSH_OPTIONS+=" -q"
+    ;;
+  esac
+  eurybox_display_message debug CHECK "ssh options: $EURYBOX_SSH_OPTIONS"
+  eurybox_display_message debug CHECK "nmap options: $EURYBOX_NMAP_OPTIONS"
+  eurybox_display_message debug CHECK "ls options: $EURYBOX_LS_OPTIONS"
+  eurybox_display_message debug CHECK "nfs mount options: $EURYBOX_MNT_NFS_OPTIONS"
+  eurybox_display_message debug CHECK "virsh options: $EURYBOX_VIRSH_OPTIONS"
+}
+
+#Desc: verify the kernel is Linux
+#No arg required
+eurybox_check_kernel()
+{
+  #Check kernel name
+  KERNEL_NAME=`uname -s`
+  if [[ $KERNEL_NAME != "Linux" ]]
+  then
+    eurybox_display_message error CHECK "Kernel $KERNEL_NAME not supported - please use Linux"
+  else
+    eurybox_display_message message CHECK "Kernel $KERNEL_NAME found"
+  fi
+  #Check nfs4 capabilities
+  #fgrep nfs4 /proc/kallsyms
+}
+
+#Desc: check the hypervisor distribution
+#No arg required
+eurybox_check_distribution ()
+{
+  case $EURYBOX_DISTRIB_TYPE in
+    centos )
+      DISTRIBUTION_FILE="/etc/centos-release"
+    ;;
+    redhat )
+      DISTRIBUTION_FILE="/etc/redhat-release"
+    ;;
+    * )
+      eurybox_display_message error CHECK "Unsupported distribution: $EURYBOX_DISTRIB_TYPE - please use centos or redhat distribution"
+    ;;
+  esac
+  DETECTED_DISTRIBUTION=`grep $EURYBOX_DISTRIB_VERSION $DISTRIBUTION_FILE 2>&1`
+  STATUS=$?
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_display_message error CHECK "Configured distribution type doesn't corresponds to detected distribution"
+  else
+    if [[ $DETECTED_DISTRIBUTION != "" ]]
+    then
+      eurybox_display_message message CHECK "Distribution verification success"
+      eurybox_display_message debug CHECK "${DETECTED_DISTRIBUTION}"
+    else
+      eurybox_display_message error CHECK "Configured distribution version doesn't corresponds to detected distribution version: ${DETECTED_DISTRIBUTION}"
+    fi
+  fi
+  case $EURYBOX_DISTRIB_MAC_TYPE in
+    selinux )
+      SE_OUT=`sudo getenforce`
+      STATUS=$?
+      if [[ !($STATUS -eq 0) ]]
+      then
+        eurybox_display_message error CHECK "Configured distribution mac type doesn't seems to be supported"
+      else
+        case $SE_OUT in
+          Enforcing|enforcing )
+            eurybox_display_message message CHECK "SELinux - enabled"
+          ;;
+          Permissive|permissive )
+            eurybox_display_message warning CHECK "SELinux - permissive mode detected"
+          ;;
+          Disabled|disabled )
+            eurybox_display_message warning CHECK "SELinux - disabled"
+          ;;
+          * )
+            eurybox_display_message warning CHECK "Unknown mode: $SE_OUT"
+          ;;
+        esac
+      fi
+    ;;
+    none )
+    ;;
+  esac
+}
+
+#Desc: check the overall environment
+#1 arg can be supplied as script type (BACKUP/UPDATE/EXEC_COMMAND) to add extra checks
+eurybox_check_environment ()
+{
+  SCRIPT_TYPE=$1
+  #Check external sotfware used
+  eurybox_check_command grep sudo ssh openssl tar par2 virsh sha512sum sha256sum awk pigz df tail virt-sysprep tput nmap rpcinfo pbzip2
+  #Check kernel capabilities
+  eurybox_check_kernel
+  #Check distribution is coherent with configuration
+  eurybox_check_distribution
+  #Check administration privileges
+  sudo -nv
+  STATUS=$?
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_display_message error CHECK "Administration privileges are not available. Please execute this script as root or privileged user without password prompting (NOPASSWD / sudo group member)."
+  else
+    eurybox_display_message debug CHECK "Administration privileges available."
+  fi
+  #Check access to Hypervisor
+  eurybox_check_hv_access
+  #Check access to VMs
+  for ((EURYBOX_SERVICES_NUM=1;EURYBOX_SERVICES_NUM<=$EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM++));
+  do
+    eurybox_check_vm_access ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,USER]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,PORT]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,DISK]}
+  done
+  #FOR BKP ONLY
+#TODO:  $SCRIPT_TYPE = "RESTORE"
+  if [[ $SCRIPT_TYPE = "BACKUP" ]]
+  then
+    #Check tmp folder
+    if [[ !(-d ${EURYBOX_BACKUP_TMP_FOLDER}) ]]
+    then
+      sudo mkdir -p ${EURYBOX_BACKUP_TMP_FOLDER}
+      STATUS=$?
+      if [[ !($STATUS -eq 0) ]]
+      then
+        eurybox_display_message error CHECK "Temp folder ${EURYBOX_BACKUP_TMP_FOLDER} doesn't exists and folder creation failed"
+      else
+        eurybox_display_message message CHECK "Temp folder ${EURYBOX_BACKUP_TMP_FOLDER} successfully created"
+      fi
+    fi
+    #Check bkp destination (access + space left size)
+    case ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]} in
+      "SSH" )
+        SPACE_LEFT=`ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "df -Pk ${EURYBOX_BACKUP_DESTINATION[PATH]}/" | tail -1 | awk '{print $4}'`
+        STATUS=$?
+        if [[ !($STATUS -eq 0) || $SPACE_LEFT -eq "" ]]
+        then
+          eurybox_display_message warning CHECK "Status: $STATUS"
+          eurybox_display_message error CHECK "SSH backup destination connection failed"
+        fi
+        if (( $SPACE_LEFT < $EURYBOX_BACKUP_LOW_CRITICAL_LEVEL ))
+        then
+          eurybox_display_message error CHECK "Free space left on backup destination too low: $SPACE_LEFT kB"
+        else
+          if (( $SPACE_LEFT < $EURYBOX_BACKUP_LOW_WARNING_LEVEL ))
+          then
+            eurybox_display_message warning CHECK "Free space left on backup destination low: $SPACE_LEFT kB"
+          else
+            eurybox_display_message debug CHECK "Free space left on backup destination OK: $SPACE_LEFT kB"
+          fi
+        fi
+      ;;
+      "NFS" )
+        eurybox_mount_backup_nfs
+        SPACE_LEFT=`sudo df -Pk ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/ | tail -1 | awk '{print $4}'`
+        if (( $SPACE_LEFT < $EURYBOX_BACKUP_LOW_CRITICAL_LEVEL ))
+        then
+          eurybox_display_message error CHECK "Free space left on backup destination too low: $SPACE_LEFT kB"
+        else
+          if (( $SPACE_LEFT < $EURYBOX_BACKUP_LOW_WARNING_LEVEL ))
+          then
+            eurybox_display_message warning CHECK "Free space left on backup destination low: $SPACE_LEFT kB"
+          else
+            eurybox_display_message debug CHECK "Free space left on backup destination OK: $SPACE_LEFT kB"
+          fi
+        fi
+        eurybox_umount_backup_nfs
+      ;;
+    esac
+  #FIXME:Check permissions
+  #READ ORIGIN FOLDER / WRITE DESTINATION FOLDER
+  fi
+}
+
+#Desc: check hypervisor access
+#No arg required
+eurybox_check_hv_access ()
+{
+  TYPE=$1
+  SYSINFOS=`sudo virsh $EURYBOX_VIRSH_OPTIONS sysinfo 2>&1`
+  STATUS=$?
+  if [[ $STATUS -eq 0 ]]
+  then
+    eurybox_display_message message CHECK "Hypervisor - access OK"
+    NODEINFOS=`sudo virsh $EURYBOX_VIRSH_OPTIONS nodeinfo 2>&1`
+    CAPABILITIES=`sudo virsh $EURYBOX_VIRSH_OPTIONS capabilities 2>&1`
+    DOMCAPABILITIES=`sudo virsh $EURYBOX_VIRSH_OPTIONS domcapabilities 2>&1`
+    eurybox_display_message debug CHECK "$SYSINFOS"
+    eurybox_display_message debug CHECK "$NODEINFOS"
+    eurybox_display_message debug CHECK "$CAPABILITIES"
+    eurybox_display_message debug CHECK "$DOMCAPABILITIES"
+  else
+    eurybox_display_message error CHECK "Hypervisor - access failed: $SYSINFOS_OK"
+  fi
+}
+
+#Desc: check Virtual Machine access
+#5 arg min required: vm_name vm_host ssh_user ssh_port disk [disk] ...
+eurybox_check_vm_access ()
+{
+  NAME=$1
+  HOST=$2
+  USER=$3
+  PORT=$4
+  DISK=${@:5:$#}
+  EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list --all | grep $NAME 2>&1`
+  if [[ -z "$EURYBOX_VM_NAME" ]]
+  then
+    eurybox_display_message error CHECK "VM $NAME - virsh not found"
+  else
+    eurybox_display_message debug CHECK "VM $NAME - virsh found: $EURYBOX_VM_NAME"
+    EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | grep $NAME`
+    if [[ -z "$EURYBOX_VM_NAME" ]]
+    then
+      eurybox_display_message warning CHECK "VM $NAME is not running - cannot check network configuration"
+    else
+      eurybox_display_message message CHECK "VM $NAME - running"
+      eurybox_display_message debug CHECK "$EURYBOX_VM_NAME"
+      EURYBOX_SSH_OK=`ssh $EURYBOX_SSH_OPTIONS -p $PORT $USER@$HOST "touch eurybox_check_ssh_ok" 2>&1`
+      STATUS=$?
+      if [[ $STATUS -eq 0 ]]
+      then
+        eurybox_display_message message CHECK "VM $NAME - SSH connection OK"
+        eurybox_display_message debug CHECK "$EURYBOX_SSH_OK"
+      else
+        eurybox_display_message warning CHECK "VM $NAME - SSH connection failed: $EURYBOX_SSH_OK"
+      fi
+    fi
+  fi
+  if [[ $DISK = "" ]]
+  then
+    eurybox_display_message debug CHECK "VM $NAME - no additional disk configured"
+  else
+    EURYBOX_DISK_OK=`sudo ls $EURYBOX_LS_OPTIONS $DISK 2>&1`
+    STATUS=$?
+    if [[ !($STATUS -eq 0) ]]
+    then
+      eurybox_display_message warning CHECK "VM $NAME - disk $DISK - access failed: $EURYBOX_DISK_OK"
+    else
+      eurybox_display_message message CHECK "VM $NAME - disk $DISK - access OK"
+      eurybox_display_message debug CHECK "$EURYBOX_DISK_OK"
+    fi
+  fi
+}
+

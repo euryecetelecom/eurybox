@@ -1,0 +1,263 @@
+#!/bin/bash
+#EuryBOX create functions file
+
+#FIXME: extract function parameters to transfer to control section use and make functions more generic and reusable
+eurybox_create_archive_desc ()
+{
+#TODO: IMPLEMENT PARALLEL EXTRACTION FOR GZ AND BZ2
+  case ${EURYBOX_BACKUP_ARCHIVE[FORMAT]} in
+    "tar" ) TAR_OPTIONS="-Stv" ;;
+    "tar.gz" ) TAR_OPTIONS="-Stvz" ;;
+    "tar.bz2" ) TAR_OPTIONS="-Stvj" ;;
+  esac
+  STATUS=1234
+  case ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]} in
+    "SSH" )
+      DESTINATION=${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.desc
+      echo "ARCHIVE_CORPORATE:$EURYBOX_CORPORATE" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      echo "ARCHIVE_FILE:${EURYBOX_BACKUP_ARCHIVE[NAME]}" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      echo "ARCHIVE_FORMAT:${EURYBOX_BACKUP_ARCHIVE[FORMAT]}" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      echo "ARCHIVE_TARGETS:${EURYBOX_BACKUP_TARGETS[*]}" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      echo "ARCHIVE_TYPE:$EURYBOX_BACKUP_TYPE" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      echo "ARCHIVE_VERSION:$EURYBOX_VERSION" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      echo "ECC_FILE:${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[ECC]}" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      echo "ECC_FORMAT:${EURYBOX_BACKUP_ARCHIVE[ECC]}" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      echo "ECC_LEVEL:${EURYBOX_BACKUP_ARCHIVE[ECC_LEVEL]\%}" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      echo "HASH_FILE:${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[HASH]}" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      echo "HASH_FORMAT:${EURYBOX_BACKUP_ARCHIVE[HASH]}" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      echo "ENCRYPTED_ARCHIVE:${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]}" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      if [[ ${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]} = "true" ]]
+      then
+        echo "ENCRYPTION_ALGORITHM:${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]}" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+        echo "ARCHIVE_CONTENT:" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+    #FIXME: function to read archive with variable archive format required here
+        DESC_OUT=$((
+        (
+          ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat ${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]}" | sudo openssl enc -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -d -k ${EURYBOX_BACKUP_ARCHIVE[PASSWORD]} | sudo tar ${TAR_OPTIONS} | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+        )) 2>&1)
+        STATUS=$?
+      else
+        echo "ARCHIVE_CONTENT:" | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+      #FIXME: function to read archive with variable archive format required here
+        DESC_OUT=$((
+        (
+        ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat ${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]}" | sudo tar ${TAR_OPTIONS} | ssh  -o "PasswordAuthentication no" -o "ConnectTimeout $EURYBOX_NETWORK_TIMEOUT" -o "ConnectionAttempts $EURYBOX_MAX_RETRY_ON_FAILURE" -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+        )) 2>&1)      
+        STATUS=$?
+      fi
+    ;;
+    "NFS" )
+      DESTINATION=${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.desc
+      eurybox_mount_backup_nfs
+      sudo echo "ARCHIVE_CONTENT:$EURYBOX_CORPORATE" >> $DESTINATION
+      sudo echo "ARCHIVE_FILE:${EURYBOX_BACKUP_ARCHIVE[NAME]}" >> $DESTINATION
+      sudo echo "ARCHIVE_FORMAT:${EURYBOX_BACKUP_ARCHIVE[FORMAT]}" >> $DESTINATION
+      sudo echo "ARCHIVE_TARGETS:${EURYBOX_BACKUP_TARGETS[*]}" >> $DESTINATION
+      sudo echo "ARCHIVE_TYPE:$EURYBOX_BACKUP_TYPE" >> $DESTINATION
+      sudo echo "ARCHIVE_VERSION:$EURYBOX_VERSION" >> $DESTINATION
+      sudo echo "ECC_FILE:${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[ECC]}" >> $DESTINATION
+      sudo echo "ECC_FORMAT:${EURYBOX_BACKUP_ARCHIVE[ECC]}" >> $DESTINATION
+      sudo echo "ECC_LEVEL:${EURYBOX_BACKUP_ARCHIVE[ECC_LEVEL]\%}" >> $DESTINATION
+      sudo echo "HASH_FILE:${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[HASH]}" >> $DESTINATION
+      sudo echo "HASH_FORMAT:${EURYBOX_BACKUP_ARCHIVE[HASH]}" >> $DESTINATION
+      sudo echo "ENCRYPTED_ARCHIVE:${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]}" >> $DESTINATION
+      if [[ ${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]} = "true" ]]
+      then
+        sudo echo "ENCRYPTION_ALGORITHM:${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]}" >> $DESTINATION
+        sudo echo "ARCHIVE_CONTENT:" >> $DESTINATION
+      #FIXME: function to read archive with variable archive format required here
+        DESC_OUT=$((
+        (
+          sudo openssl enc -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -d -in ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]} -k ${EURYBOX_BACKUP_ARCHIVE[PASSWORD]} | sudo tar ${TAR_OPTIONS} >> $DESTINATION
+#          STATUS=$(( ${PIPESTATUS[0]} + ${PIPESTATUS[1]} ))
+        )) 2>&1)
+        STATUS=$?
+      else
+        sudo echo "ARCHIVE_CONTENT:" >> $DESTINATION
+      #FIXME: function to read archive with variable archive format required here
+        DESC_OUT=$((
+        (
+          sudo tar ${TAR_OPTIONS}f ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]} >> $DESTINATION
+        )) 2>&1)
+        STATUS=$?
+      fi
+      eurybox_umount_backup_nfs
+    ;;
+    * )
+      eurybox_display_message error CREATE "Unkown backup destination protocol: ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]}"
+    ;;
+  esac
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_display_message warning CREATE "Archive description creation failed / error $STATUS --> $DESC_OUT"
+  else
+    eurybox_display_message message CREATE "Archive description creation - OK"
+    eurybox_display_message debug CREATE "$DESC_OUT"
+  fi
+}
+
+#FIXME: extract function parameters to transfer to control section use and make functions more generic and reusable
+eurybox_create_archive_tar ()
+{
+  if [[ $EURYBOX_LOG_LEVEL = "debug" ]]
+  then
+    TAR_OPTIONS="-v"
+  else
+    TAR_OPTIONS="-"
+  fi
+  case ${EURYBOX_BACKUP_ARCHIVE[FORMAT]} in
+    "tar" ) TAR_OPTIONS="${TAR_OPTIONS}Sc" ;;
+    "tar.gz" ) TAR_OPTIONS="${TAR_OPTIONS}Sc --use-compress-program=pigz" ;;
+    "tar.bz2" ) TAR_OPTIONS="${TAR_OPTIONS}Sc --use-compress-program=pbzip2 " ;;
+    #xz
+  esac
+  case ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]} in
+    "SSH" ) 
+      if [[ ${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]} = "true" ]]
+      then
+        TAR_OUT=$((
+        (
+          sudo tar $TAR_OPTIONS ${EURYBOX_BACKUP_TARGETS[*]} | sudo openssl enc -salt -e -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -k ${EURYBOX_BACKUP_ARCHIVE[PASSWORD]} | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat > ${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]}"
+          #STATUS=$(( ${PIPESTATUS[0]} + ${PIPESTATUS[1]} + ${PIPESTATUS[2]} ))
+          )) 2>&1)
+        STATUS=$?
+      else
+        TAR_OUT=$((
+        (
+          sudo tar $TAR_OPTIONS ${EURYBOX_BACKUP_TARGETS[*]} | ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat > ${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]}"
+          #STATUS=$(( ${PIPESTATUS[0]} + ${PIPESTATUS[1]} ))
+          )) 2>&1)
+        STATUS=$?
+      fi
+    ;;
+    "NFS" )
+      eurybox_mount_backup_nfs
+      if [[ ${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]} = "true" ]]
+      then
+        TAR_OUT=$((
+        (
+          sudo tar ${TAR_OPTIONS} ${EURYBOX_BACKUP_TARGETS[*]} | sudo openssl enc -salt -e -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -k ${EURYBOX_BACKUP_ARCHIVE[PASSWORD]} -out ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]}
+#          STATUS=$(( ${PIPESTATUS[0]} + ${PIPESTATUS[1]} ))
+          )) 2>&1)
+        STATUS=$?
+      else
+        TAR_OUT=`sudo tar ${TAR_OPTIONS} -f ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]} ${EURYBOX_BACKUP_TARGETS[*]} 2>&1`
+        STATUS=$?
+      fi
+      eurybox_umount_backup_nfs
+    ;;
+    * )
+      eurybox_display_message error CREATE "Unkown backup destination protocol: ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]}"
+    ;;
+  esac
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_display_message error CREATE "Archive creation - failed / error: $STATUS --> $TAR_OUT. Continuing anyway"
+  else
+    eurybox_display_message message CREATE "Archive creation - OK"
+    eurybox_display_message debug CREATE "$TAR_OUT"
+  fi
+}
+
+#FIXME: extract function parameters to transfer to control section use and make functions more generic and reusable
+eurybox_create_archive_par ()
+{
+  case $EURYBOX_LOG_LEVEL in
+    "debug" ) PAR_OPTIONS="-v -v";;
+    "message" ) PAR_OPTIONS="-v";;
+    "warning" ) PAR_OPTIONS="-q";;
+    "error" ) PAR_OPTIONS="-q -q";;
+  esac
+  case ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]} in
+    SSH )
+      DESTINATION=${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[ECC]}
+      case "${EURYBOX_BACKUP_ARCHIVE[ECC]}" in
+        "par2" )
+#FIXME: par2 doesn't work on input, but need a file...
+#          ssh -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat ${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}" | sudo par2 c $PAR_OPTIONS -r${EURYBOX_BACKUP_ARCHIVE[ECC_LEVEL]} -t+ ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[ECC]} | ssh -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "cat >> $DESTINATION"
+#          STATUS=$?
+          PAR_OUT="Not Available Yet"
+          STATUS=1
+        ;;
+      * )
+          eurybox_display_message error CREATE "Archive ecc format unknown: ${EURYBOX_BACKUP_ARCHIVE[HASH]}"
+        ;;
+      esac
+      ;;
+    NFS )
+      eurybox_mount_backup_nfs
+      case "${EURYBOX_BACKUP_ARCHIVE[ECC]}" in
+        "par2" )
+          PAR_OUT=`sudo par2 c $PAR_OPTIONS -r${EURYBOX_BACKUP_ARCHIVE[ECC_LEVEL]} -t+ ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[ECC]} ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]} 2>&1`
+          STATUS=$?
+        ;;
+        * )
+          eurybox_display_message error CREATE "Archive ecc format unknown: ${EURYBOX_BACKUP_ARCHIVE[HASH]}"
+        ;;
+      esac
+      eurybox_umount_backup_nfs
+      ;;
+    * )
+      eurybox_display_message error CREATE "Archive backup destination protocol unknown: ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]}"
+    ;;
+  esac
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_display_message warning ARCHIVE "Archive ecc creation - failed: $PAR_OUT. Continuing anyway"
+  else
+    eurybox_display_message message CREATE "Archive ecc creation - OK"
+    eurybox_display_message debug CREATE "$PAR_OUT"
+  fi
+}
+
+#FIXME: extract function parameters to transfer to control section use and make functions more generic and reusable
+eurybox_create_archive_sha ()
+{
+  case $EURYBOX_LOG_LEVEL in
+    "debug" ) SHA_OPTIONS="";;
+    "message" ) SHA_OPTIONS="";;
+    "warning" ) SHA_OPTIONS="";;
+    "error" ) SHA_OPTIONS="";;
+  esac
+  case ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]} in
+    SSH )
+      case "${EURYBOX_BACKUP_ARCHIVE[HASH]}" in
+        "sha256" )
+          SHA_OUT=`ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "sha256sum $SHA_OPTIONS ${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}* > ${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[HASH]}" 2<&1`
+        ;;
+        "sha512" )
+          SHA_OUT=`ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "sha512sum $SHA_OPTIONS ${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}* > ${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[HASH]}" 2<&1`
+        ;;
+        * )
+          eurybox_display_message error CREATE "Archive hash format unknown: ${EURYBOX_BACKUP_ARCHIVE[HASH]}"
+        ;;
+      esac
+      STATUS=$?
+      ;;
+    NFS )
+      eurybox_mount_backup_nfs
+      case "${EURYBOX_BACKUP_ARCHIVE[HASH]}" in
+        "sha256" )
+          SHA_OUT=`sudo sh -c "sha256sum $SHA_OPTIONS ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}* > ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[HASH]}" 2<&1`
+          STATUS=$?
+        ;;
+        "sha512" )
+          SHA_OUT=`sudo sh -c "sha512sum $SHA_OPTIONS ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}* > ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[HASH]}" 2<&1`
+          STATUS=$?
+        ;;
+        * )
+          eurybox_display_message error CREATE "Archive hash format unknown: ${EURYBOX_BACKUP_ARCHIVE[HASH]}"
+        ;;
+      esac
+      eurybox_umount_backup_nfs
+      ;;
+  esac
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_display_message warning CREATE "Archive hash creation failed. Continuing anyway."
+  else
+    eurybox_display_message message CREATE "Archive hash creation - OK"
+    eurybox_display_message debug CREATE "$SHA_OUT"
+  fi
+}
+

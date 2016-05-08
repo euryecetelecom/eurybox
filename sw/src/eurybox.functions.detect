@@ -1,0 +1,172 @@
+#!/bin/bash
+#EuryBOX detect functions file
+
+#Desc: detect archive content from description file
+#TODO: implement archive access method abstraction
+#7 args required: bkp_protocol bkp_path bkp_arch bkp_mount bkp_port bkp_user bkp_host
+eurybox_detect_archive_content ()
+{
+  BKP_PROTOCOL=$1
+  BKP_DEST=$2
+  BKP_ARCH=$3
+  BKP_MOUNT=$4
+  BKP_PORT=$5
+  BKP_USER=$6
+  BKP_HOST=$7
+  case $BKP_PROTOCOL in
+    "SSH" )
+      DESTINATION=$BKP_DEST/$BKP_ARCH
+      ARCH_DESC=`ssh $EURYBOX_SSH_OPTIONS -p $BKP_PORT $BKP_USER@$BKP_HOST "cat $DESTINATION" 2>&1`
+      STATUS=$?
+    ;;
+    "NFS" )
+      DESTINATION=$BKP_MOUNT/$BKP_ARCH*
+      eurybox_mount_backup_nfs
+      ARCH_DESC=`sudo cat $DESTINATION 2>&1`
+      STATUS=$?
+      eurybox_umount_backup_nfs
+    ;;
+    * )
+      eurybox_display_message error DETECT "Unkown backup destination protocol: $BKP_PROTOCOL"
+    ;;
+  esac
+  
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_display_message error DETECT "Archive description access failed: $ARCH_DESC"
+  else
+    BKP_ENC=`echo "${ARCH_DESC}" | grep "ENCRYPTED_ARCHIVE" | awk -F":" '($NF == "true") || ($NF == "false") {print $NF}'`
+    if [[ $BKP_ENC = "" ]]
+    then
+      eurybox_display_message error DETECT "Archive description encryption activated search failed"
+    else
+      EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,ENC]=$BKP_ENC
+      eurybox_display_message debug DETECT "Archive description encryption activated search success - found: $BKP_ENC"
+    fi
+  fi
+}
+
+#Desc: detect if there are archive in specified directory
+#TODO: implement archive access method abstraction
+#7 args required: bkp_protocol bkp_path bkp_arch bkp_mount bkp_port bkp_user bkp_host
+eurybox_detect_archives ()
+{
+  BKP_PROTOCOL=$1
+  BKP_DEST=$2
+  BKP_ARCH=$3
+  BKP_MOUNT=$4
+  BKP_PORT=$5
+  BKP_USER=$6
+  BKP_HOST=$7
+  case $BKP_PROTOCOL in
+    "SSH" )
+      DESTINATION=$BKP_DEST/$BKP_ARCH
+      FILES_LIST=`ssh $EURYBOX_SSH_OPTIONS -p $BKP_PORT $BKP_USER@$BKP_HOST "ls $EURYBOX_LS_OPTIONS $DESTINATION"`
+      STATUS=$?
+    ;;
+    "NFS" )
+      DESTINATION=$BKP_MOUNT/$BKP_ARCH
+      eurybox_mount_backup_nfs
+      FILES_LIST=`sudo ls $EURYBOX_LS_OPTIONS $DESTINATION`
+      STATUS=$?
+      eurybox_umount_backup_nfs
+    ;;
+    * )
+      eurybox_display_message error DETECT "Unkown backup destination protocol: $BKP_PROTOCOL"
+    ;;
+  esac
+
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_display_message error DETECT "Archive description listing not found: $BKP_LIST"
+  else
+    #Filter by desc extension, extract filename and store in an array
+    BKP_LIST=( $(echo "$FILES_LIST" | awk -F"." '($NF == "desc") {print $0}' | awk -F"/" '{print $NF}') )
+    if [[ ${BKP_LIST[@]} = "" ]]
+    then
+      eurybox_display_message error DETECT "No archive found"
+    else
+      EURYBOX_DETECTED_ARCHIVES[NUM]=${#BKP_LIST[@]}
+      eurybox_display_message message DETECT "${EURYBOX_DETECTED_ARCHIVES[NUM]} archive descriptions found"
+      for (( ARCH_NUM=0;ARCH_NUM<${EURYBOX_DETECTED_ARCHIVES[NUM]};ARCH_NUM++ ))
+      do
+        EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,FILE]=${BKP_LIST[$ARCH_NUM]}
+        EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,VERSION]=`echo "${BKP_LIST[$ARCH_NUM]}" | awk -F"." '{ for(i=1; i<(NF); i++) { if(i==1) { version=$i } else { version=version"."$i } } ; print version }'`
+        EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,NAME]=`echo "${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,VERSION]}" | awk -F"_" '{ for(i=1; i<(NF-5); i++) { if(i==1) { name=$i } else { name=name"_"$i } } ; print name }'`
+        EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TIME]=`echo "${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,VERSION]}" | awk -F"_" '{ for(i=(NF-5); i<=NF; i++) { if(i==(NF-5)) { name=$i } else { name=name"_"$i } } ; print name }'`
+        eurybox_display_message debug DETECT "Archive detected: ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,NAME]} / timestamp: ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TIME]} / version: ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,VERSION]} / filename: ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,FILE]}"
+      done
+    fi
+  fi
+}
+
+#Desc: detect the libvirt environment
+#No arg required
+eurybox_detect_libvirt_env ()
+{
+  #Detect networks
+#  NETWORKS=( $(sudo virsh $EURYBOX_VIRSH_OPTIONS net-list --all | awk 'NR>2 {print $1}') )
+  NETWORKS=( $(sudo virsh $EURYBOX_VIRSH_OPTIONS net-list --all | awk '{print $1}') )
+  STATUS=$?
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_display_message error DETECT "Error on hypervisor network detection"
+  else
+    if [[ !($NETWORKS = "") ]]
+    then
+      EURYBOX_DETECTED_NETWORKS[NUM]=${#NETWORKS[@]}
+      eurybox_display_message message DETECT "Hypervisors networks - detection OK: ${EURYBOX_DETECTED_NETWORKS[NUM]} founds"
+      for (( NET_NUM=0;NET_NUM<${EURYBOX_DETECTED_NETWORKS[NUM]};NET_NUM++ ))
+      do
+        EURYBOX_DETECTED_NETWORKS[NAME,$NET_NUM]=${NETWORKS[NET_NUM]}
+        eurybox_display_message debug DETECT "Network detected: ${EURYBOX_DETECTED_NETWORKS[NAME,$NET_NUM]}"
+      done
+    else
+      eurybox_display_message warning DETECT "No hypervisor network detected"
+    fi
+  fi
+  #Detect domains
+  DOMAINS=( $(sudo virsh $EURYBOX_VIRSH_OPTIONS list --all | awk '{print $2}') )
+  STATUS=$?
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_display_message error DETECT "Error on hypervisor domain detection"
+  else
+    if [[ !($DOMAINS = "") ]]
+    then
+      EURYBOX_DETECTED_DOMAINS[NUM]=${#DOMAINS[@]}
+      eurybox_display_message message DETECT "Hypervisor domains (VM) - detection OK:  ${EURYBOX_DETECTED_DOMAINS[NUM]} founds"
+      for (( DOM_NUM=0;DOM_NUM<${EURYBOX_DETECTED_DOMAINS[NUM]};DOM_NUM++ ))
+      do
+        EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]=${DOMAINS[DOM_NUM]}
+        eurybox_display_message debug DETECT "VM detected: ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]}"
+      done
+    else
+      eurybox_display_message warning DETECT "No hypervisor domain detected"
+    fi
+  fi
+  #Detect disks associated to each domain
+  for (( DOM_NUM=0;DOM_NUM<${EURYBOX_DETECTED_DOMAINS[NUM]};DOM_NUM++ ))
+  do
+    DISKS=( $(sudo virsh $EURYBOX_VIRSH_OPTIONS domblklist ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]} | awk '($2 != "-") {print $2}') )
+    STATUS=$?
+    if [[ !($STATUS -eq 0) ]]
+    then
+      eurybox_display_message error DETECT "Error on VM disk detection: ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]}"
+    else
+    if [[ !($DISKS = "") ]]
+    then
+      EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NUM]=${#DISKS[@]}
+      eurybox_display_message message DETECT "VM ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]} - ${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NUM]} disks founds"
+      for (( DISK_NUM=0;DISK_NUM<${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NUM]};DISK_NUM++ ))
+      do
+        EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NAME,$DISK_NUM]=${DISKS[DISK_NUM]}
+        eurybox_display_message debug DETECT "VM ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]} - disk detected: ${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NAME,$DISK_NUM]}"
+      done
+      else
+        eurybox_display_message warning DETECT "No domain disk detected for VM ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]}"
+      fi
+    fi
+  done
+}
+

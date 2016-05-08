@@ -1,0 +1,290 @@
+#!/bin/bash
+#EuryBOX tools functions file
+
+#Desc: change file(s) permissions
+#FIXME: extract function parameters to transfer to control section use and make functions more generic and reusable (no more only bkp files)
+#1 arg required: permission mask
+eurybox_change_files_permissions ()
+{
+  MASK=$1
+  case ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]} in
+    SSH )
+      MASK_OUT=`ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "chmod -R $MASK ${EURYBOX_BACKUP_DESTINATION[PATH]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}*" 2<&1`
+      STATUS=$?
+    ;;
+    NFS )
+      eurybox_mount_backup_nfs
+      MASK_OUT=`sudo sh -c "sudo chmod -R $MASK ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}*" 2<&1`
+      STATUS=$?
+      eurybox_umount_backup_nfs
+    ;;
+  esac
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_display_message warning TOOLS "Permissions change failed: $MASK_OUT"
+  else
+    eurybox_display_message message TOOLS "Permissions changed: $MASK_OUT"
+  fi
+}
+
+#Desc: echo a log message depending on configuration log level and message level
+#3 args required: level(debug, message, warning, error) category message
+eurybox_display_message ()
+{
+  LEVEL=$1
+  CATEGORY=$2
+  MESSAGE=$3
+  NOW=$(date +"%Y_%m_%d@%H:%M:%S")
+  case $LEVEL in
+    debug ) 
+      if [[ $EURYBOX_LOG_LEVEL = "debug" || $EURYBOX_LOG_LEVEL = "verbose" ]]
+      then
+        tput setb 0
+        tput setaf 6
+        echo "$NOW [EURYBOX][DEBUG][$CATEGORY] $MESSAGE" 
+      fi
+    ;;
+    message )
+      if [[ $EURYBOX_LOG_LEVEL = "debug" || $EURYBOX_LOG_LEVEL = "info" || $EURYBOX_LOG_LEVEL = "verbose" ]]
+      then
+        tput setb 0
+        tput setaf 2
+        echo "$NOW [EURYBOX][MESSAGE][$CATEGORY] $MESSAGE"
+      fi
+    ;;
+    warning )
+      if [[ $EURYBOX_LOG_LEVEL = "debug" || $EURYBOX_LOG_LEVEL = "info" || $EURYBOX_LOG_LEVEL = "verbose" || $EURYBOX_LOG_LEVEL = "warning" ]]
+      then
+         tput setb 0
+         tput setaf 1
+         echo "$NOW [EURYBOX][WARNING][$CATEGORY] $MESSAGE"
+      fi
+    ;;
+    error )
+      if [[ $EURYBOX_LOG_LEVEL = "debug" || $EURYBOX_LOG_LEVEL = "info" || $EURYBOX_LOG_LEVEL = "verbose" || $EURYBOX_LOG_LEVEL = "warning" || $EURYBOX_LOG_LEVEL = "error" ]]
+      then
+         tput setb 0
+         tput setaf 1
+         echo "$NOW [EURYBOX][ERROR][$CATEGORY] $MESSAGE"
+         tput setb 0
+         tput sgr0
+         echo "Stopping script execution"
+         exit 1
+      fi
+    ;;
+    * ) 
+      tput sgr0
+      echo "$NOW [EURYBOX][ERROR][SYNTAX] Bad log level message. Stopping script execution"
+      exit 1
+    ;;
+  esac
+  tput setb 0
+  tput sgr0
+}
+
+#Desc: echo detected archives, sorted by name, year and month
+#No arg required
+eurybox_display_detected_archives ()
+{
+  for (( ARCH_NUM=0;ARCH_NUM<${EURYBOX_DETECTED_ARCHIVES[NUM]};ARCH_NUM++ ))
+  do
+    NAME=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,NAME]}
+    TIME=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TIME]}
+    ENC=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,ENC]}
+    COMP=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,COMP]}
+    YEAR=`echo ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TIME]} | awk -F"_" '{ print $1 }'`
+    MONTH=`echo ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TIME]} | awk -F"_" '{ print $2 }'`
+    DAY=`echo ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TIME]} | awk -F"_" '{ print $3 }'`
+    HOUR=`echo ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TIME]} | awk -F"_" '{ print $4 }'`
+    MINUTE=`echo ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TIME]} | awk -F"_" '{ print $5 }'`
+    SECOND=`echo ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TIME]} | awk -F"_" '{ print $6 }'`
+    if [[ $NAME != $PREVIOUS_NAME ]]
+    then
+      echo "------------ [[ ARCHIVE: $NAME ]] ------------"
+      echo "YEAR \\ MONTH \\ DAY @ HOUR:MINUTE:SECOND | ENC | COMP | ID"
+      PREVIOUS_YEAR=""
+      PREVIOUS_MONTH=""
+    fi
+    if [[ $YEAR != $PREVIOUS_YEAR ]]
+    then
+      ARCH_DESC="$YEAR"
+      PREVIOUS_MONTH=""
+    else
+      ARCH_DESC='    '
+    fi
+    if [[ $MONTH != $PREVIOUS_MONTH ]]
+    then
+      ARCH_DESC="$ARCH_DESC \\  $MONTH  "
+    else
+      ARCH_DESC="$ARCH_DESC        "
+    fi
+    ARCH_DESC="$ARCH_DESC \\  $DAY @  $HOUR :  $MINUTE  :  $SECOND  "
+    case $ENC in
+      false )
+        ARCH_DESC="$ARCH_DESC |    "
+      ;;
+      true )
+        ARCH_DESC="$ARCH_DESC |  X "
+      ;;
+      * )
+        ARCH_DESC="$ARCH_DESC |  ? "
+      ;;
+    esac
+    case $COMP in
+     none )
+       ARCH_DESC="$ARCH_DESC |     "
+     ;;
+     "tar.bz" )
+       ARCH_DESC="$ARCH_DESC |BZIP2"
+     ;;
+     "tar.gz" )
+       ARCH_DESC="$ARCH_DESC | GZIP"
+     ;;
+     * )
+       ARCH_DESC="$ARCH_DESC |  ?  "
+     ;;
+    esac
+    ARCH_DESC="$ARCH_DESC | $ARCH_NUM"
+    echo "$ARCH_DESC"
+    PREVIOUS_NAME=$NAME
+    PREVIOUS_YEAR=$YEAR
+    PREVIOUS_MONTH=$MONTH
+  done
+}
+
+#Desc: execute a command through ssh
+#4 args required: host port user command
+eurybox_exec_ssh_command ()
+{
+  HOST=$1
+  PORT=$2
+  USER=$3
+  CMD=$4
+  NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  STATUS=1234
+  while [[ !( $STATUS -eq 0 ) && !( $NB_TRY_LEFT -eq 0 ) ]]
+  do
+    CMD_OUT=`ssh -p ${PORT} ${USER}@${HOST} "${CMD}" 2>&1`
+    STATUS=$?
+    if [[ $STATUS -eq 0 ]]
+    then
+      eurybox_display_message message TOOLS "Command execution - OK: $CMD"
+      eurybox_display_message debug TOOLS "$CMD_OUT"
+    else
+      eurybox_display_message warning TOOLS "Command execution - failed - trying again in 5 seconds / $NB_TRY_LEFT left: $CMD_OUT"
+      NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+      sleep 5
+    fi
+  done
+  if [[ $NB_TRY_LEFT -eq 0 ]]
+  then
+    eurybox_display_message error TOOLS "Command execution - failed - $CMD: $CMD_OUT"
+  fi
+}
+
+#Desc: flush a directory
+#1 arg required: flush_directory
+eurybox_flush_directory ()
+{
+  T_PATH=$1
+  if [[ !( $T_PATH = "") && !( $T_PATH = "/" ) && !( $T_PATH == *"/etc"* ) && !( $T_PATH == *"/proc"* )  && !( $T_PATH = "/home" ) && !( $T_PATH == *"/bin"* ) && !( $T_PATH == *"/boot"*) && !( $T_PATH == *"/lib"*)  && !($T_PATH == *"/lib64"*) && !($T_PATH == *"/sbin"*) && !($T_PATH == *"/usr"*) ]]
+  then
+    sudo rm -Rf $T_PATH/*
+    STATUS=$?
+    if [[ !($STATUS -eq 0) ]]
+    then
+      eurybox_display_message warning TOOLS "Directory flush failed: $T_PATH"
+    else
+      eurybox_display_message message TOOLS "Directory flushed: $T_PATH"
+    fi
+  else
+    eurybox_display_message warning TOOLS "Forbidden directory flush attempt: $T_PATH"
+  fi
+}
+
+#Desc: mount an nfs backup target folder
+#FIXME: extract function parameters to transfer to control section use and make functions more generic and reusable
+eurybox_mount_backup_nfs ()
+{
+  if [[ !(-d ${EURYBOX_BACKUP_DESTINATION[MOUNT]}) ]]
+  then
+    sudo mkdir -p ${EURYBOX_BACKUP_DESTINATION[MOUNT]}
+    L_STATUS=$?
+    if [[ !($L_STATUS -eq 0) ]]
+    then
+      eurybox_display_message error TOOLS "Mount point ${EURYBOX_BACKUP_DESTINATION[MOUNT]} doesn't exists and folder creation failed"
+    else
+      eurybox_display_message message TOOLS "NFS local mountpoint ${EURYBOX_BACKUP_DESTINATION[MOUNT]} successfully created"
+    fi
+  fi
+  L_STATUS=1234
+  NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  while [[ !($L_STATUS -eq 0) && ($(grep ${EURYBOX_BACKUP_DESTINATION[MOUNT]} /proc/mounts) = "") && !($NB_TRY_LEFT -eq 0) ]]
+  do
+    #Is NFS server available?
+    NFS_OUT=`sudo nmap $EURYBOX_NMAP_OPTIONS -p 2049 ${EURYBOX_BACKUP_DESTINATION[HOST]} | grep open 2>&1`    
+    L_STATUS=$?
+    if [[ !($L_STATUS -eq 0) ]]
+    then
+      eurybox_display_message warning TOOLS "Backup destination NFS server unreacheable - trying to contact again in 5 seconds / $NB_TRY_LEFT left"
+      NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+      sleep 5
+    else
+      eurybox_display_message debug TOOLS "Backup destination NFS server reached"
+      NFS_OUT=`sudo rpcinfo -t ${EURYBOX_BACKUP_DESTINATION[HOST]} nfs 2>&1`
+      L_STATUS=$?
+      if [[ !($L_STATUS -eq 0) ]]
+      then
+        eurybox_display_message warning TOOLS "Backup destination NFS server not registred on destination - trying to contact again in 5 seconds / $NB_TRY_LEFT left: $NFS_OUT"
+        NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+        sleep 5
+      else
+        MOUNT_OUT=`sudo mount $EURYBOX_MNT_NFS_OPTIONS -t ${EURYBOX_BACKUP_DESTINATION[TYPE]} ${EURYBOX_BACKUP_DESTINATION[HOST]}:${EURYBOX_BACKUP_DESTINATION[PATH]} ${EURYBOX_BACKUP_DESTINATION[MOUNT]} 2>&1`
+        L_STATUS=$?
+        if [[ !($L_STATUS -eq 0) ]]
+        then
+          NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+          eurybox_display_message warning TOOLS "Backup destination NFS mount failed and target folder is empty - trying to mount again in 5 seconds / $NB_TRY_LEFT left: $MOUNT_OUT"
+          sleep 5
+        fi
+      fi
+    fi
+  done
+  if [[ $NB_TRY_LEFT -eq 0 ]]
+  then
+    eurybox_display_message error TOOLS "Backup destination NFS mount failed : $MOUNT_OUT"
+    eurybox_display_message debug TOOLS "$NFS_OUT"
+    eurybox_display_message debug TOOLS ""
+  else
+    eurybox_display_message message TOOLS "Backup destination NFS mount success"
+    eurybox_display_message debug TOOLS "$NFS_OUT"
+    eurybox_display_message debug TOOLS "$MOUNT_OUT"
+  fi
+}
+
+#Desc: un-mount an nfs backup target folder
+#FIXME: extract function parameters to transfer to control section use and make functions more generic and reusable
+eurybox_umount_backup_nfs ()
+{
+  L_STATUS=1234
+  NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  while [[ !($L_STATUS -eq 0) && !($(grep ${EURYBOX_BACKUP_DESTINATION[MOUNT]} /proc/mounts) = "") && !($NB_TRY_LEFT -eq 0) ]]
+  do
+    UMOUNT_OUT=`sudo umount ${EURYBOX_BACKUP_DESTINATION[MOUNT]} 2>&1`
+    L_STATUS=$?
+    if [[ !($L_STATUS -eq 0) ]]
+    then
+      NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+      eurybox_display_message warning TOOLS "Backup destination NFS unmount failed and target folder is not empty. Trying to unmount again in 5 seconds / $NB_TRY_LEFT left: $UMOUNT_OUT"
+      sleep 5
+    fi
+  done
+  if [[ $NB_TRY_LEFT -eq 0 ]]
+  then
+    eurybox_display_message error TOOLS "Backup destination NFS unmount failed: $UMOUNT_OUT"
+  else
+    eurybox_display_message message TOOLS "Backup destination NFS unmount success"
+    eurybox_display_message debug TOOLS "$UMOUNT_OUT"
+  fi
+}
+

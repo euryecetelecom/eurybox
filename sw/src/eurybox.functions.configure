@@ -1,0 +1,26 @@
+#!/bin/bash
+#EuryBOX configuration functions file
+
+#Desc: specify the restoration target through interactive input by user
+#No arg required
+eurybox_configure_interactive_restoration_target ()
+{
+  echo "Enter archive ID target for restoration:"
+  read USER_INPUT
+  LREGEX='^[0-9].+?$'
+  while ! [[ $USER_INPUT =~ $LREGEX ]]; do
+    eurybox_display_message warning CONFIGURE "Please enter an integer number (exs: 0 / 2 / 25)"
+    eurybox_display_message debug CONFIGURE "Received input: $USER_INPUT"
+    read USER_INPUT
+  done
+  EURYBOX_RESTORE_TARGET_ARCHIVE[ID]=$USER_INPUT
+  if (( ${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]} >= ${EURYBOX_DETECTED_ARCHIVES[NUM]} ))
+  then
+    eurybox_display_message error CONFIGURE  "Selected archive unavailable: ${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]}"
+  else
+    EURYBOX_BACKUP_ARCHIVE[NAME]="${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},VERSION]}"
+    eurybox_display_message message CONFIGURE "Selected archive: ${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]} / ${EURYBOX_BACKUP_ARCHIVE[NAME]}"
+  fi
+}
+
+

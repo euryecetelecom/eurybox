@@ -1,5 +1,4 @@
 #!/bin/bash
-#2015/06/25: Guillaume REMBERT
 #EuryBOX backup script
 
 START_TIME=$(date +%s)
@@ -22,81 +21,76 @@ if [[ -f $SCRIPT_CONF_PATH && -f $SCRIPT_FUNC_PATH ]]
 then
   source $SCRIPT_CONF_PATH
   source $SCRIPT_FUNC_PATH
-  eurybox_message_display debug STATUS "Configuration and function scripts successfully sourced"
+  eurybox_display_message debug STATUS "Configuration and function scripts successfully sourced"
 else
   echo "[EURYBOX][ERROR][RESSOURCES] Configuration file $SCRIPT_CONF_PATH or functions file $SCRIPT_FUNC_PATH not found. Stopping execution"
   exit 1
 fi
-eurybox_message_display message STATUS "Checking configuration"
+eurybox_display_message message STATUS "Checking configuration"
 eurybox_check_configuration BACKUP
 
 #Check input parameters
-eurybox_message_display message STATUS "Checking parameters"
+eurybox_display_message message STATUS "Checking parameters"
 eurybox_check_arguments $SCRIPT_ARGUMENTS
 
 #Check environment
-eurybox_message_display message STATUS "Checking environment"
+eurybox_display_message message STATUS "Checking environment"
 eurybox_check_environment BACKUP
 
-eurybox_message_display message STATUS "$EURYBOX_CORPORATE backup script started"
+eurybox_display_message message STATUS "$EURYBOX_CORPORATE backup script started"
 
-###############################
-# VM + HYPERVISOR COLD BACKUP #
-###############################
 
 euryboxctrl_prepare_backup
 
-#Performing a cold backup
-if [ "$EURYBOX_BACKUP_COLD" = true ] 
-then
-  eurybox_message_display message STATUS "VM Cold backup started"
-
-  #Shutdown all services vm
-  euryboxctrl_shutdown_services_ssh
-
-  euryboxctrl_check_all_services_halted
-
-  #Create archive file
-  euryboxctrl_create_arch
-
-  #Re-Start all VMs
-  euryboxctrl_start_services
-
-  #Create errors correcting codes files
-  euryboxctrl_create_eccf
-
-  #Create description file
-  euryboxctrl_create_desc
-
-  #Create hash file
-  euryboxctrl_create_hash
-
-  #Create signature file
-  euryboxctrl_create_sign
-
-  eurybox_message_display message STATUS "Cold backup finished"
-
-fi
-
+case $EURYBOX_BACKUP_TYPE in
+  vm_cold )
+###############################
+# VM + HYPERVISOR COLD BACKUP #
+###############################
+    eurybox_display_message message STATUS "VM Cold backup started"
+    #Shutdown all services vm
+    euryboxctrl_shutdown_services_ssh
+    euryboxctrl_check_all_services_halted
+    #Create archive file
+    euryboxctrl_create_arch
+    #Re-Start all VMs
+    euryboxctrl_start_services
+    #Create errors correcting codes files
+    euryboxctrl_create_eccf
+    #Create description file
+    euryboxctrl_create_desc
+    #Create hash file
+    euryboxctrl_create_hash
+    #Create signature file
+    euryboxctrl_create_sign
+    eurybox_display_message message STATUS "VM Cold backup finished"
+  ;;
+  vm_hot )
 #################
 # VM HOT BACKUP #
 #################
-
-#Performing a hot backup
-if [ "$EURYBOX_BACKUP_HOT" = true ]
-then
-  eurybox_message_display warning STATUS "HOT BACKUP NOT AVAILABLE YET"
+    eurybox_display_message warning STATUS "HOT BACKUP NOT AVAILABLE YET"
   #HDD
-  #NB: use LVM snapshot for live backup...
+  #NB: use LVM + VM snapshot capabilities for live backup
   #NB: sync OS FS
   #NB: lock DB / prepare for bkp
   #CF on CentOS wiki / good KVM backup article/script example
-fi
+  ;;
+  full_cold|full_hot  )
+#######################
+# VM + HV FULL BACKUP #
+#######################
+    eurybox_display_message warning STATUS "FULL BACKUP NOT AVAILABLE YET"
+  ;;
+  * )
+    eurybox_display_message warning STATUS "Unknown backup type: $EURYBOX_BACKUP_TYPE"
+  ;;
+esac
 
 euryboxctrl_terminate_backup
 
 #Finished
 END_TIME=$(date +%s)
 DIFF_TIME=$(( $END_TIME - $START_TIME ))
-eurybox_message_display message STATUS "Backup finished"
-eurybox_message_display message TIMING "Backup took $DIFF_TIME seconds"
+eurybox_display_message message STATUS "Backup finished"
+eurybox_display_message message TIMING "Backup took $DIFF_TIME seconds"

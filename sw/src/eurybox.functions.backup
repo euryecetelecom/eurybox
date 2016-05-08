@@ -1,0 +1,58 @@
+#!/bin/bash
+#EuryBOX backup functions file
+
+#Desc: add backup services targets additional disks from configuration
+#No arg required
+eurybox_backup_add_config_disks ()
+{
+  for (( EURYBOX_SERVICES_NUM=1;EURYBOX_SERVICES_NUM<=EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM++ ))
+  do
+    EURYBOX_BACKUP_TARGETS[$((${#EURYBOX_BACKUP_TARGETS[@]}+1))]=${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,DISK]}
+    eurybox_display_message message BACKUP "VM ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]} - config file disk dependencies added to the list for backup: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,DISK]}"
+  done
+}
+
+#Desc: add backup services targets automatically detected disks
+#No arg required
+eurybox_backup_prepare_services ()
+{
+  for (( DOM_NUM=0;DOM_NUM<${EURYBOX_DETECTED_DOMAINS[NUM]};DOM_NUM++ ))
+  do
+    DOM_FOUND=0
+    #Check if detected domains are in the list for export
+    for (( EURYBOX_SERVICES_NUM=1;EURYBOX_SERVICES_NUM<=EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM++ ))
+    do
+      if [[ "${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]}" = "${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}" ]]
+      then
+        DOM_FOUND=1
+        #Add attached disks to backup list
+        for (( DISK_NUM=0;DISK_NUM<${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NUM]};DISK_NUM++ ))
+        do
+          DISK_FOUND=0
+          #Check if not already present in backup list
+          for (( BKP_NUM=0;BKP_NUM<${#EURYBOX_BACKUP_TARGETS[@]};BKP_NUM++ ))
+          do
+            if [[ ${EURYBOX_BACKUP_TARGETS[${BKP_NUM}]} == *"${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NAME,$DISK_NUM]}"* ]]
+            then
+              DISK_FOUND=1
+              eurybox_display_message debug BACKUP "VM ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]} - detected disk ${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NAME,$DISK_NUM]} already in the list for backup: ${EURYBOX_BACKUP_TARGETS[${BKP_NUM}]}"
+            fi
+          done
+          if [[ $DISK_FOUND -eq 0 ]]
+          then
+            EURYBOX_BACKUP_TARGETS[$((${#EURYBOX_BACKUP_TARGETS[@]}+1))]=${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NAME,$DISK_NUM]}
+            eurybox_display_message message PREPARE "VM ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]} - detected disk added to the list for backup: ${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NAME,$DISK_NUM]}"
+          fi
+        done
+      fi
+    done
+    if [[ $DOM_FOUND -eq 0 ]]
+    then
+      eurybox_display_message warning BACKUP "Detected domain not in the list for backup: ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]}"
+    else
+      eurybox_display_message message BACKUP "VM ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]} - prepared for backup"
+      eurybox_export_vm_config ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]}
+    fi
+  done
+}
+
