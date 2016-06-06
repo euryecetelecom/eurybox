@@ -16,7 +16,7 @@ eurybox_update_hv ()
     then
       EURYBOX_HV_UPDATED=1
     else
-      eurybox_display_message debug UPDATE "Hypervisor update failed - trying again in 5 seconds / $NB_TRY_LEFT left: $UPDATE_OUT"
+      eurybox_display_message debug UPDATE "Hypervisor update failed - trying again in 5 seconds - error $STATUS:\n$UPDATE_OUT\n$NB_TRY_LEFT left"
       sleep 5
     fi
   done
@@ -25,7 +25,7 @@ eurybox_update_hv ()
     eurybox_display_message error UPDATE "Hypervisor update failed - no success after $EURYBOX_MAX_RETRY_ON_FAILURE"
   else
     eurybox_display_message message UPDATE "Hypervisor update OK"
-    eurybox_display_message debug UPDATE "$UPDATE_OUT"
+    eurybox_display_message debug UPDATE "Update command output:\n$UPDATE_OUT"
   fi
 }
 
@@ -67,7 +67,7 @@ eurybox_update_vm ()
     then
       EURYBOX_VM_UPDATED=1
     else
-      eurybox_display_message debug UPDATE "VM $NAME - update failed - trying again in 5 seconds / $NB_TRY_LEFT left: $UPDATE_OUT"
+      eurybox_display_message debug UPDATE "VM $NAME update failed - trying again in 5 seconds - error $STATUS:\n$UPDATE_OUT\n$NB_TRY_LEFT left"
       sleep 5
     fi
   done
@@ -76,7 +76,7 @@ eurybox_update_vm ()
     eurybox_display_message error UPDATE "VM $NAME - update failed - no success after $EURYBOX_MAX_RETRY_ON_FAILURE"
   else
     eurybox_display_message message UPDATE "VM $NAME - update OK"
-    eurybox_display_message debug UPDATE "$UPDATE_OUT"
+    eurybox_display_message debug UPDATE "Update command output:\n$UPDATE_OUT"
   fi
 }
 

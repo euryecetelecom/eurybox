@@ -3,7 +3,6 @@
 
 #TODO: Implement lockfile and check if not already running
 
-
 #Desc: check the input arguments
 #TODO: implement arguments usage (debug mode / config file ...) and checking
 eurybox_check_arguments ()
@@ -32,7 +31,7 @@ eurybox_check_command()
 #Conf file needs to be sourced before
 eurybox_check_configuration ()
 {
-  SCRIPT_TYPE=$1
+  local -i SCRIPT_TYPE=$1
   
   #Checking script execution parameters
   if [[ -z $EURYBOX_CORPORATE || -z $EURYBOX_LOG_LEVEL || -z $EURYBOX_PARALLELISM_LEVEL ]]
@@ -82,7 +81,7 @@ eurybox_check_configuration ()
     esac
     case $EURYBOX_DISTRIB_MAC_TYPE in
       selinux|none ) 
-         eurybox_display_message message CHECK "Distribution mandatory access control type configured: $EURYBOX_DISTRIB_TYPE - version $EURYBOX_DISTRIB_VERSION"
+         eurybox_display_message message CHECK "Distribution mandatory access control type configured: $EURYBOX_DISTRIB_MAC_TYPE"
       ;;
       apparmor|* )
         eurybox_display_message error CHECK "Unsupported mandatory access control type: $EURYBOX_DISTRIB_MAC_TYPE - please use selinux or none"
@@ -127,6 +126,7 @@ eurybox_check_configuration ()
   EURYBOX_NMAP_OPTIONS="--host-timeout $EURYBOX_NETWORK_TIMEOUT --max-retries $EURYBOX_MAX_RETRY_ON_FAILURE"
   EURYBOX_LS_OPTIONS="-x"
   EURYBOX_MNT_NFS_OPTIONS="-o hard,retry=$EURYBOX_MAX_RETRY_ON_FAILURE,rsize=8192,wsize=8192,timeo=${EURYBOX_NETWORK_TIMEOUT}0"
+  EURYBOX_MNT_SSHFS_OPTIONS="-o allow_root,large_read ${EURYBOX_SSH_OPTIONS}"
   case $EURYBOX_LOG_LEVEL in
     debug )
       set -xv
@@ -134,6 +134,7 @@ eurybox_check_configuration ()
       EURYBOX_NMAP_OPTIONS+=" -d9 -v3"
       EURYBOX_LS_OPTIONS+=" -a"
       EURYBOX_MNT_NFS_OPTIONS+=" -v"
+      EURYBOX_MNT_SSHFS_OPTIONS+=" -oLogLevel=debug"
       EURYBOX_VIRSH_OPTIONS+=" -q -d 0"
     ;;
     verbose )
@@ -142,26 +143,31 @@ eurybox_check_configuration ()
       EURYBOX_NMAP_OPTIONS+=" -d0 -v2"
       EURYBOX_LS_OPTIONS+=" -l"
       EURYBOX_MNT_NFS_OPTIONS+=" -v"
+      EURYBOX_MNT_SSHFS_OPTIONS+=" -oLogLevel=verbose"
       EURYBOX_VIRSH_OPTIONS+=" -q -d 2"
     ;;
     info )
       EURYBOX_SSH_OPTIONS+=" -oLogLevel=info"
       EURYBOX_NMAP_OPTIONS+=" -d0 -v"
       EURYBOX_LS_OPTIONS+=" -l"
+      EURYBOX_MNT_SSHFS_OPTIONS+=" -oLogLevel=info"
       EURYBOX_VIRSH_OPTIONS+=" -q -d 4"
     ;;
     warning )
       EURYBOX_SSH_OPTIONS+=" -oLogLevel=info"
       EURYBOX_NMAP_OPTIONS+=" -d0 -v0"
       EURYBOX_VIRSH_OPTIONS+=" -q"
+      EURYBOX_MNT_SSHFS_OPTIONS+=" -oLogLevel=info"
     ;;
     error )
       EURYBOX_SSH_OPTIONS+=" -oLogLevel=error"
       EURYBOX_NMAP_OPTIONS+=" -d0 -v1"
       EURYBOX_VIRSH_OPTIONS+=" -q"
+      EURYBOX_MNT_SSHFS_OPTIONS+=" -oLogLevel=error"
     ;;
   esac
   eurybox_display_message debug CHECK "ssh options: $EURYBOX_SSH_OPTIONS"
+  eurybox_display_message debug CHECK "sshfs options: $EURYBOX_MNT_SSHFS_OPTIONS"
   eurybox_display_message debug CHECK "nmap options: $EURYBOX_NMAP_OPTIONS"
   eurybox_display_message debug CHECK "ls options: $EURYBOX_LS_OPTIONS"
   eurybox_display_message debug CHECK "nfs mount options: $EURYBOX_MNT_NFS_OPTIONS"
@@ -215,7 +221,7 @@ eurybox_check_distribution ()
   fi
   case $EURYBOX_DISTRIB_MAC_TYPE in
     selinux )
-      SE_OUT=`sudo getenforce`
+      SE_OUT=`sudo getenforce 2>&1`
       STATUS=$?
       if [[ !($STATUS -eq 0) ]]
       then
@@ -246,9 +252,12 @@ eurybox_check_distribution ()
 #1 arg can be supplied as script type (BACKUP/UPDATE/EXEC_COMMAND) to add extra checks
 eurybox_check_environment ()
 {
-  SCRIPT_TYPE=$1
+  local SCRIPT_TYPE=$1
+  local STATUS
+  local BKP_SPACE_LEFT
+  local BKP_ACCESS_OK
   #Check external sotfware used
-  eurybox_check_command grep sudo ssh openssl tar par2 virsh sha512sum sha256sum awk pigz df tail virt-sysprep tput nmap rpcinfo pbzip2
+  eurybox_check_command grep sudo ssh openssl tar par2 virsh sha512sum sha256sum awk pigz df tail virt-sysprep tput nmap rpcinfo pbzip2 sshfs curlftpfs cryptsetup
   #Check kernel capabilities
   eurybox_check_kernel
   #Check distribution is coherent with configuration
@@ -270,7 +279,6 @@ eurybox_check_environment ()
     eurybox_check_vm_access ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,USER]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,PORT]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,DISK]}
   done
   #FOR BKP ONLY
-#TODO:  $SCRIPT_TYPE = "RESTORE"
   if [[ $SCRIPT_TYPE = "BACKUP" ]]
   then
     #Check tmp folder
@@ -286,46 +294,44 @@ eurybox_check_environment ()
       fi
     fi
     #Check bkp destination (access + space left size)
-    case ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]} in
-      "SSH" )
-        SPACE_LEFT=`ssh $EURYBOX_SSH_OPTIONS -p ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]}@${EURYBOX_BACKUP_DESTINATION[HOST]} "df -Pk ${EURYBOX_BACKUP_DESTINATION[PATH]}/" | tail -1 | awk '{print $4}'`
-        STATUS=$?
-        if [[ !($STATUS -eq 0) || $SPACE_LEFT -eq "" ]]
-        then
-          eurybox_display_message warning CHECK "Status: $STATUS"
-          eurybox_display_message error CHECK "SSH backup destination connection failed"
-        fi
-        if (( $SPACE_LEFT < $EURYBOX_BACKUP_LOW_CRITICAL_LEVEL ))
-        then
-          eurybox_display_message error CHECK "Free space left on backup destination too low: $SPACE_LEFT kB"
-        else
-          if (( $SPACE_LEFT < $EURYBOX_BACKUP_LOW_WARNING_LEVEL ))
-          then
-            eurybox_display_message warning CHECK "Free space left on backup destination low: $SPACE_LEFT kB"
-          else
-            eurybox_display_message debug CHECK "Free space left on backup destination OK: $SPACE_LEFT kB"
-          fi
-        fi
-      ;;
-      "NFS" )
-        eurybox_mount_backup_nfs
-        SPACE_LEFT=`sudo df -Pk ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/ | tail -1 | awk '{print $4}'`
-        if (( $SPACE_LEFT < $EURYBOX_BACKUP_LOW_CRITICAL_LEVEL ))
-        then
-          eurybox_display_message error CHECK "Free space left on backup destination too low: $SPACE_LEFT kB"
-        else
-          if (( $SPACE_LEFT < $EURYBOX_BACKUP_LOW_WARNING_LEVEL ))
-          then
-            eurybox_display_message warning CHECK "Free space left on backup destination low: $SPACE_LEFT kB"
-          else
-            eurybox_display_message debug CHECK "Free space left on backup destination OK: $SPACE_LEFT kB"
-          fi
-        fi
-        eurybox_umount_backup_nfs
-      ;;
-    esac
-  #FIXME:Check permissions
-  #READ ORIGIN FOLDER / WRITE DESTINATION FOLDER
+    eurybox_backup_mount_target
+    BKP_SPACE_LEFT=`sudo df -Pk ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/ | tail -1 | awk '{print $4}'`
+    if (( $BKP_SPACE_LEFT < $EURYBOX_BACKUP_LOW_CRITICAL_LEVEL ))
+    then
+      eurybox_display_message error CHECK "Free space left on backup destination too low: $BKP_SPACE_LEFT kB"
+    else
+      if (( $BKP_SPACE_LEFT < $EURYBOX_BACKUP_LOW_WARNING_LEVEL ))
+      then
+        eurybox_display_message warning CHECK "Free space left on backup destination low: $BKP_SPACE_LEFT kB"
+      else
+        eurybox_display_message debug CHECK "Free space left on backup destination OK: $BKP_SPACE_LEFT kB"
+      fi
+    fi
+    #Check bkp destination access (READ/WRITE)
+    BKP_ACCESS_OK=`sudo touch ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/test && sudo rm ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/test`
+    STATUS=$?
+    if [[ !($STATUS -eq 0) ]]
+    then
+      eurybox_display_message error CHECK "Backup destination access failed: \n$BKP_ACCESS_OK"
+    else
+      eurybox_display_message debug CHECK "Backup destination access OK: \n$BKP_ACCESS_OK"
+    fi
+    eurybox_backup_umount_target
+  fi
+  #FOR RESTORE ONLY
+  if [[ $SCRIPT_TYPE = "RESTORE" ]]
+  then
+    #Check bkp origin access (READ)
+    eurybox_backup_mount_target
+    BKP_ACCESS_OK=`sudo ls -al ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/`
+    STATUS=$?
+    if [[ !($STATUS -eq 0) ]]
+    then
+      eurybox_display_message error CHECK "Backup origin access failed: \n$BKP_ACCESS_OK"
+    else
+      eurybox_display_message debug CHECK "Backup origin access OK: \n$BKP_ACCESS_OK"
+    fi
+    eurybox_backup_umount_target
   fi
 }
 
@@ -333,8 +339,12 @@ eurybox_check_environment ()
 #No arg required
 eurybox_check_hv_access ()
 {
-  TYPE=$1
-  SYSINFOS=`sudo virsh $EURYBOX_VIRSH_OPTIONS sysinfo 2>&1`
+  local TYPE=$1
+  local STATUS
+  local NODEINFOS
+  local CAPABILITIES
+  local DOMCAPABILITIES
+  local SYSINFOS=`sudo virsh $EURYBOX_VIRSH_OPTIONS sysinfo 2>&1`
   STATUS=$?
   if [[ $STATUS -eq 0 ]]
   then
@@ -342,12 +352,12 @@ eurybox_check_hv_access ()
     NODEINFOS=`sudo virsh $EURYBOX_VIRSH_OPTIONS nodeinfo 2>&1`
     CAPABILITIES=`sudo virsh $EURYBOX_VIRSH_OPTIONS capabilities 2>&1`
     DOMCAPABILITIES=`sudo virsh $EURYBOX_VIRSH_OPTIONS domcapabilities 2>&1`
-    eurybox_display_message debug CHECK "$SYSINFOS"
-    eurybox_display_message debug CHECK "$NODEINFOS"
-    eurybox_display_message debug CHECK "$CAPABILITIES"
-    eurybox_display_message debug CHECK "$DOMCAPABILITIES"
+    eurybox_display_message debug CHECK "System informations:\n$SYSINFOS"
+    eurybox_display_message debug CHECK "Node informations:\n$NODEINFOS"
+    eurybox_display_message debug CHECK "Node capabilities:\n$CAPABILITIES"
+    eurybox_display_message debug CHECK "Dom capabilities:\n$DOMCAPABILITIES"
   else
-    eurybox_display_message error CHECK "Hypervisor - access failed: $SYSINFOS_OK"
+    eurybox_display_message error CHECK "Hypervisor - access failed: \n$SYSINFOS_OK"
   fi
 }
 
@@ -355,12 +365,15 @@ eurybox_check_hv_access ()
 #5 arg min required: vm_name vm_host ssh_user ssh_port disk [disk] ...
 eurybox_check_vm_access ()
 {
-  NAME=$1
-  HOST=$2
-  USER=$3
-  PORT=$4
-  DISK=${@:5:$#}
-  EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list --all | grep $NAME 2>&1`
+  local NAME=$1
+  local HOST=$2
+  local USER=$3
+  local PORT=$4
+  local DISK=${@:5:$#}
+  local STATUS
+  local EURYBOX_DISK_OK
+  local EURYBOX_SSH_OK
+  local EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list --all | grep $NAME 2>&1`
   if [[ -z "$EURYBOX_VM_NAME" ]]
   then
     eurybox_display_message error CHECK "VM $NAME - virsh not found"
@@ -378,9 +391,9 @@ eurybox_check_vm_access ()
       if [[ $STATUS -eq 0 ]]
       then
         eurybox_display_message message CHECK "VM $NAME - SSH connection OK"
-        eurybox_display_message debug CHECK "$EURYBOX_SSH_OK"
+        eurybox_display_message debug CHECK "SSH output:\n$EURYBOX_SSH_OK"
       else
-        eurybox_display_message warning CHECK "VM $NAME - SSH connection failed: $EURYBOX_SSH_OK"
+        eurybox_display_message warning CHECK "VM $NAME - SSH connection failed:\n$EURYBOX_SSH_OK"
       fi
     fi
   fi
@@ -392,10 +405,10 @@ eurybox_check_vm_access ()
     STATUS=$?
     if [[ !($STATUS -eq 0) ]]
     then
-      eurybox_display_message warning CHECK "VM $NAME - disk $DISK - access failed: $EURYBOX_DISK_OK"
+      eurybox_display_message warning CHECK "VM $NAME - disk $DISK - access failed:\n$EURYBOX_DISK_OK"
     else
       eurybox_display_message message CHECK "VM $NAME - disk $DISK - access OK"
-      eurybox_display_message debug CHECK "$EURYBOX_DISK_OK"
+      eurybox_display_message debug CHECK "Disk access output:\n$EURYBOX_DISK_OK"
     fi
   fi
 }

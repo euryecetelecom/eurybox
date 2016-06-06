@@ -2,83 +2,115 @@
 #EuryBOX detect functions file
 
 #Desc: detect archive content from description file
-#TODO: implement archive access method abstraction
-#7 args required: bkp_protocol bkp_path bkp_arch bkp_mount bkp_port bkp_user bkp_host
+#1 arg required: description_file
 eurybox_detect_archive_content ()
 {
-  BKP_PROTOCOL=$1
-  BKP_DEST=$2
-  BKP_ARCH=$3
-  BKP_MOUNT=$4
-  BKP_PORT=$5
-  BKP_USER=$6
-  BKP_HOST=$7
-  case $BKP_PROTOCOL in
-    "SSH" )
-      DESTINATION=$BKP_DEST/$BKP_ARCH
-      ARCH_DESC=`ssh $EURYBOX_SSH_OPTIONS -p $BKP_PORT $BKP_USER@$BKP_HOST "cat $DESTINATION" 2>&1`
-      STATUS=$?
-    ;;
-    "NFS" )
-      DESTINATION=$BKP_MOUNT/$BKP_ARCH*
-      eurybox_mount_backup_nfs
-      ARCH_DESC=`sudo cat $DESTINATION 2>&1`
-      STATUS=$?
-      eurybox_umount_backup_nfs
-    ;;
-    * )
-      eurybox_display_message error DETECT "Unkown backup destination protocol: $BKP_PROTOCOL"
-    ;;
-  esac
-  
+  local DESTINATION=$1
+  local BKP_ENC
+  local BKP_COMP
+  local BKP_TYPE
+  local BKP_VERS
+  local BKP_ECC
+  local STATUS
+  local ARCH_DESC=`sudo cat $DESTINATION 2>&1`
+  STATUS=$?
   if [[ !($STATUS -eq 0) ]]
   then
-    eurybox_display_message error DETECT "Archive description access failed: $ARCH_DESC"
+#FIXME: STATUS IS NOT 0 WHEN FORBIDEN TO ACCESS FILE
+    eurybox_display_message warning DETECT "Archive description access failed: \n$ARCH_DESC"
   else
+    eurybox_display_message debug DETECT "Archive description access success: \n$ARCH_DESC"
     BKP_ENC=`echo "${ARCH_DESC}" | grep "ENCRYPTED_ARCHIVE" | awk -F":" '($NF == "true") || ($NF == "false") {print $NF}'`
     if [[ $BKP_ENC = "" ]]
     then
-      eurybox_display_message error DETECT "Archive description encryption activated search failed"
+      eurybox_display_message warning DETECT "Archive description encryption search failed"
     else
       EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,ENC]=$BKP_ENC
-      eurybox_display_message debug DETECT "Archive description encryption activated search success - found: $BKP_ENC"
+      eurybox_display_message debug DETECT "Archive description encryption search success - found: $BKP_ENC"
     fi
+    BKP_COMP=`echo "${ARCH_DESC}" | grep "ARCHIVE_FORMAT" | awk -F":" '{print $NF}'`
+    case $BKP_COMP in
+      "" )
+        eurybox_display_message warning DETECT "Archive description compression search failed"
+        ;;
+      tar )
+        EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,COMP]="none"
+        eurybox_display_message debug DETECT "Archive description compression search success - found: none"
+        ;;
+      tar.gz|tar.bz2 )
+        EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,COMP]=$BKP_COMP
+        eurybox_display_message debug DETECT "Archive description compression search success - found: $BKP_COMP"
+      ;;
+      * )
+        eurybox_display_message warning DETECT "Archive description compression search failed - unknown backup compression found: $BKP_COMP"
+      ;;
+    esac
+    BKP_TYPE=`echo "${ARCH_DESC}" | grep "ARCHIVE_TYPE" | awk -F":" '{print $NF}'`
+    case $BKP_TYPE in
+      "" )
+        eurybox_display_message warning DETECT "Archive description type search failed"
+        ;;
+      vm_cold|vm_hot|full_hot|full_cold )
+        EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TYPE]=$BKP_TYPE
+        eurybox_display_message debug DETECT "Archive description type search success - found: $BKP_TYPE"
+        ;;
+      * )
+        eurybox_display_message warning DETECT "Archive description type search failed - unknown backup type found: $BKP_TYPE"
+      ;;
+    esac
+    BKP_VERS=`echo "${ARCH_DESC}" | grep "ARCHIVE_VERSION" | awk -F":" '{print $NF}'`
+    case $BKP_VERS in
+      "" )
+        eurybox_display_message warning DETECT "Archive description version search failed"
+        ;;
+      1.0 )
+        EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,VERS]=$BKP_VERS
+        eurybox_display_message debug DETECT "Archive description version search success - found: $BKP_VERS"
+        ;;
+      * )
+        eurybox_display_message warning DETECT "Archive description version search failed - unknown backup version found: $BKP_VERS"
+      ;;
+    esac
+    BKP_ECC=`echo "${ARCH_DESC}" | grep "ECC_FORMAT" | awk -F":" '{print $NF}'`
+    case $BKP_ECC in
+      "" )
+        eurybox_display_message warning DETECT "Archive description correcting codes search failed"
+        ;;
+      par2 )
+        EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,ECC]=$BKP_ECC
+        eurybox_display_message debug DETECT "Archive description correcting codes search success - found: $BKP_ECC"
+        ;;
+      * )
+        eurybox_display_message warning DETECT "Archive description correcting codes search failed - unknown backup correcting codes found: $BKP_ECC"
+      ;;
+    esac
+    BKP_HASH=`echo "${ARCH_DESC}" | grep "HASH_FORMAT" | awk -F":" '{print $NF}'`
+    case $BKP_HASH in
+      "" )
+        eurybox_display_message warning DETECT "Archive description hash search failed"
+        ;;
+      sha256|sha512 )
+        EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,HASH]=$BKP_HASH
+        eurybox_display_message debug DETECT "Archive description hash search success - found: $BKP_HASH"
+        ;;
+      * )
+        eurybox_display_message warning DETECT "Archive description hash search failed - unknown backup hash found: $BKP_HASH"
+      ;;
+    esac
   fi
 }
 
-#Desc: detect if there are archive in specified directory
-#TODO: implement archive access method abstraction
-#7 args required: bkp_protocol bkp_path bkp_arch bkp_mount bkp_port bkp_user bkp_host
+#Desc: detect archives in specified directory
+#1 arg required: search_path
 eurybox_detect_archives ()
 {
-  BKP_PROTOCOL=$1
-  BKP_DEST=$2
-  BKP_ARCH=$3
-  BKP_MOUNT=$4
-  BKP_PORT=$5
-  BKP_USER=$6
-  BKP_HOST=$7
-  case $BKP_PROTOCOL in
-    "SSH" )
-      DESTINATION=$BKP_DEST/$BKP_ARCH
-      FILES_LIST=`ssh $EURYBOX_SSH_OPTIONS -p $BKP_PORT $BKP_USER@$BKP_HOST "ls $EURYBOX_LS_OPTIONS $DESTINATION"`
-      STATUS=$?
-    ;;
-    "NFS" )
-      DESTINATION=$BKP_MOUNT/$BKP_ARCH
-      eurybox_mount_backup_nfs
-      FILES_LIST=`sudo ls $EURYBOX_LS_OPTIONS $DESTINATION`
-      STATUS=$?
-      eurybox_umount_backup_nfs
-    ;;
-    * )
-      eurybox_display_message error DETECT "Unkown backup destination protocol: $BKP_PROTOCOL"
-    ;;
-  esac
-
+  local DESTINATION="$1/*"
+  local BKP_LIST
+  local FILES_LIST=`sudo ls $EURYBOX_LS_OPTIONS $DESTINATION 2>&1`
+  local STATUS=$?
   if [[ !($STATUS -eq 0) ]]
   then
-    eurybox_display_message error DETECT "Archive description listing not found: $BKP_LIST"
+    eurybox_display_message error DETECT "Archive description listing not found: \n$FILES_LIST"
   else
     #Filter by desc extension, extract filename and store in an array
     BKP_LIST=( $(echo "$FILES_LIST" | awk -F"." '($NF == "desc") {print $0}' | awk -F"/" '{print $NF}') )
@@ -87,7 +119,7 @@ eurybox_detect_archives ()
       eurybox_display_message error DETECT "No archive found"
     else
       EURYBOX_DETECTED_ARCHIVES[NUM]=${#BKP_LIST[@]}
-      eurybox_display_message message DETECT "${EURYBOX_DETECTED_ARCHIVES[NUM]} archive descriptions found"
+      eurybox_display_message message DETECT "${EURYBOX_DETECTED_ARCHIVES[NUM]} archive description(s) found"
       for (( ARCH_NUM=0;ARCH_NUM<${EURYBOX_DETECTED_ARCHIVES[NUM]};ARCH_NUM++ ))
       do
         EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,FILE]=${BKP_LIST[$ARCH_NUM]}
@@ -105,7 +137,6 @@ eurybox_detect_archives ()
 eurybox_detect_libvirt_env ()
 {
   #Detect networks
-#  NETWORKS=( $(sudo virsh $EURYBOX_VIRSH_OPTIONS net-list --all | awk 'NR>2 {print $1}') )
   NETWORKS=( $(sudo virsh $EURYBOX_VIRSH_OPTIONS net-list --all | awk '{print $1}') )
   STATUS=$?
   if [[ !($STATUS -eq 0) ]]
@@ -115,7 +146,7 @@ eurybox_detect_libvirt_env ()
     if [[ !($NETWORKS = "") ]]
     then
       EURYBOX_DETECTED_NETWORKS[NUM]=${#NETWORKS[@]}
-      eurybox_display_message message DETECT "Hypervisors networks - detection OK: ${EURYBOX_DETECTED_NETWORKS[NUM]} founds"
+      eurybox_display_message message DETECT "Hypervisors networks - detection OK: ${EURYBOX_DETECTED_NETWORKS[NUM]} virtual network(s) found"
       for (( NET_NUM=0;NET_NUM<${EURYBOX_DETECTED_NETWORKS[NUM]};NET_NUM++ ))
       do
         EURYBOX_DETECTED_NETWORKS[NAME,$NET_NUM]=${NETWORKS[NET_NUM]}
@@ -135,7 +166,7 @@ eurybox_detect_libvirt_env ()
     if [[ !($DOMAINS = "") ]]
     then
       EURYBOX_DETECTED_DOMAINS[NUM]=${#DOMAINS[@]}
-      eurybox_display_message message DETECT "Hypervisor domains (VM) - detection OK:  ${EURYBOX_DETECTED_DOMAINS[NUM]} founds"
+      eurybox_display_message message DETECT "Hypervisor domains (VM) - detection OK:  ${EURYBOX_DETECTED_DOMAINS[NUM]} domain(s) found"
       for (( DOM_NUM=0;DOM_NUM<${EURYBOX_DETECTED_DOMAINS[NUM]};DOM_NUM++ ))
       do
         EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]=${DOMAINS[DOM_NUM]}
@@ -157,7 +188,7 @@ eurybox_detect_libvirt_env ()
     if [[ !($DISKS = "") ]]
     then
       EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NUM]=${#DISKS[@]}
-      eurybox_display_message message DETECT "VM ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]} - ${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NUM]} disks founds"
+      eurybox_display_message message DETECT "VM ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]} - ${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NUM]} disk(s) found"
       for (( DISK_NUM=0;DISK_NUM<${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NUM]};DISK_NUM++ ))
       do
         EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NAME,$DISK_NUM]=${DISKS[DISK_NUM]}

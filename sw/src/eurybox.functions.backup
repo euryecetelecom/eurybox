@@ -12,10 +12,163 @@ eurybox_backup_add_config_disks ()
   done
 }
 
+#Desc: mount the backup target
+#No arg required
+eurybox_backup_mount_target ()
+{
+  local STATUS
+  local MOUNT_OUT
+  local NB_TRY_LEFT
+  local NMAP_OUT
+  local NFS_OUT
+  local SSH_OUT
+  local PART_OUT
+  local BKP_PROTOCOL=${EURYBOX_BACKUP_DESTINATION[PROTOCOL]}
+  local BKP_DEST=${EURYBOX_BACKUP_DESTINATION[PATH]}
+  local BKP_MOUNT=${EURYBOX_BACKUP_DESTINATION[MOUNT]}
+  local BKP_PORT=${EURYBOX_BACKUP_DESTINATION[PORT]}
+  local BKP_USER=${EURYBOX_BACKUP_DESTINATION[USER]}
+  local BKP_HOST=${EURYBOX_BACKUP_DESTINATION[HOST]}
+  local BKP_TYPE=${EURYBOX_BACKUP_DESTINATION[TYPE]}
+  local BKP_PART=${EURYBOX_BACKUP_DESTINATION[PART]}
+
+  if [[ $EURYBOX_LOG_LEVEL = "debug" || $EURYBOX_LOG_LEVEL = "verbose" ]]
+  then
+    local MOUNT_OPTIONS="-v"
+  else
+    local MOUNT_OPTIONS=""
+  fi
+
+  if [[ !(-d $BKP_MOUNT) ]]
+  then
+    local MKDIR_OUT=`sudo mkdir -p $BKP_MOUNT 2>&1`
+    STATUS=$?
+    if [[ !($STATUS -eq 0) ]]
+    then
+      eurybox_display_message error BACKUP "Target local mount point directory $BKP_MOUNT doesn't exists and folder creation failed - error $STATUS:\n$MKDIR_OUT"
+    else
+      local CHMOD_OUT=`sudo chmod 700 $BKP_MOUNT 2>&1`
+      STATUS=$?
+      if [[ !($STATUS -eq 0) ]]
+      then
+        eurybox_display_message error BACKUP "Target local mount point directory $BKP_MOUNT permissions change failed - error $STATUS:\n$CHMOD_OUT"
+      else
+        eurybox_display_message message BACKUP "Target Local mount point directory $BKP_MOUNT successfully created"
+        eurybox_display_message debug BACKUP "Directory creation command output:\n$MKDIR_OUT\Directory permissions change output:\n$CHMOD_OUT"
+      fi
+    fi
+  fi
+
+  STATUS=1234
+  NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  while [[ !($STATUS -eq 0) && ($(grep ${BKP_MOUNT} /proc/mounts) = "") && !($NB_TRY_LEFT -eq 0) ]]
+  do
+    case $BKP_PROTOCOL in
+      LOCAL )
+        #Nothing to do
+        STATUS=0
+      ;;
+      NFS|SSH|FTP )
+         #Is server available?
+        NMAP_OUT=`sudo nmap $EURYBOX_NMAP_OPTIONS -p $BKP_PORT $BKP_HOST | grep open 2>&1`    
+        STATUS=$?
+        if [[ !($STATUS -eq 0) ]]
+        then
+          eurybox_display_message warning BACKUP "Backup target $BKP_PROTOCOL server unreacheable on host $BKP_HOST / port $BKP_PORT - trying to contact again in 5 seconds - error $STATUS:\n$NMAP_OUT\n$NB_TRY_LEFT left"
+          NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+          sleep 5
+        else
+          eurybox_display_message debug BACKUP "Backup target $BKP_PROTOCOL server reached on host $BKP_HOST / port $BKP_PORT"
+          case $BKP_PROTOCOL in
+            NFS )
+              NFS_OUT=`sudo rpcinfo -n $BKP_PORT -t $BKP_HOST nfs 2>&1`
+              STATUS=$?
+              if [[ !($STATUS -eq 0) ]]
+              then
+                eurybox_display_message warning BACKUP "Backup target NFS server not registred on destination - trying to contact again in 5 seconds - error $STATUS:\n$NFS_OUT\n$NB_TRY_LEFT left"
+                NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+                sleep 5
+              else
+                MOUNT_OUT=`sudo mount $MOUNT_OPTIONS $EURYBOX_MNT_NFS_OPTIONS -o proto=tcp,port=${BKP_PORT}  -t $BKP_TYPE ${BKP_HOST}:${BKP_DEST} ${BKP_MOUNT} 2>&1`
+                STATUS=$?
+                if [[ !($STATUS -eq 0) ]]
+                then
+                  NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+                  eurybox_display_message warning BACKUP "Backup target NFS mount failed and target folder is empty - trying to mount again in 5 seconds - error $STATUS:\n$MOUNT_OUT\n$NB_TRY_LEFT left"
+                  sleep 5
+                fi
+              fi
+            ;;
+            SSH )
+              #Check access
+              SSH_OUT=`ssh $EURYBOX_SSH_OPTIONS -p $BKP_PORT ${BKP_USER}@${BKP_HOST} "touch ${BKP_DEST}/eurybox_check_ssh_ok" 2>&1`
+              STATUS=$?
+              if [[ !($STATUS -eq 0) ]]
+              then
+                eurybox_display_message warning BACKUP "Backup target $BKP_PROTOCOL server unreacheable on host $BKP_HOST / port $BKP_PORT - trying to contact again in 5 seconds - error $STATUS:\n$SSH_OUT\n$NB_TRY_LEFT left"
+                NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+                sleep 5
+              else
+                eurybox_display_message debug BACKUP "Backup target $BKP_PROTOCOL server reached on host $BKP_HOST / port $BKP_PORT"
+                MOUNT_OUT=`sshfs $EURYBOX_MNT_SSHFS_OPTIONS -p $BKP_PORT ${BKP_USER}@${BKP_HOST}:${BKP_DEST} ${BKP_MOUNT} 2>&1`
+                STATUS=$?
+                if [[ !($STATUS -eq 0) ]]
+                then
+                  NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+                  eurybox_display_message warning BACKUP "Backup target SSHFS mount failed and target folder is empty - trying to mount again in 5 seconds - error $STATUS:\n$MOUNT_OUT\n$NB_TRY_LEFT left"
+                  sleep 5
+                fi
+              fi
+            ;;
+            FTP )
+              eurybox_display_message error BACKUP "Backup destination FTP not implemented yet"              
+            ;;
+          esac
+        fi
+      ;;
+      PART )
+        #Is partition available?
+        PART_OUT=`sudo ls -al ${BKP_PART} 2>&1`
+        STATUS=$?
+        if [[ !($STATUS -eq 0) ]]
+        then
+          eurybox_display_message warning BACKUP "Backup target ${BKP_PART} not found - trying to detect device again in 5 seconds - error $STATUS:\n$PART_OUT\n$NB_TRY_LEFT left"
+          NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+          sleep 5
+        else
+          eurybox_display_message message BACKUP "Backup device partition ${BKP_PART} detected"
+          eurybox_display_message debug BACKUP "Partition detection command output:\n$PART_OUT"
+          MOUNT_OUT=`sudo mount $MOUNT_OPTIONS $BKP_PART ${BKP_MOUNT} 2>&1`
+          STATUS=$?
+          if [[ !($STATUS -eq 0) ]]
+          then
+            eurybox_display_message warning BACKUP "Backup target ${BKP_PART} mount failed - trying to mount partition again in 5 seconds - error $STATUS:\n$MOUNT_OUT\n$NB_TRY_LEFT left"
+            NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+            sleep 5
+          fi
+        fi
+      ;;
+      * )
+        eurybox_display_message error BACKUP "Unkown backup target protocol: $BKP_PROTOCOL"
+      ;;
+    esac
+  done
+
+  if [[ $NB_TRY_LEFT -eq 0 ]]
+  then
+    eurybox_display_message error BACKUP "Backup target mount failed:\n$MOUNT_OUT $NFS_OUT $NMAP_OUT $SSH_OUT $PART_OUT"
+  else
+    eurybox_display_message message BACKUP "Backup target mount success"
+    eurybox_display_message debug BACKUP "Mount command output:\n$MOUNT_OUT"
+  fi
+}
+
 #Desc: add backup services targets automatically detected disks
 #No arg required
 eurybox_backup_prepare_services ()
 {
+  local DOM_FOUND
+  local DISK_FOUND
   for (( DOM_NUM=0;DOM_NUM<${EURYBOX_DETECTED_DOMAINS[NUM]};DOM_NUM++ ))
   do
     DOM_FOUND=0
@@ -41,7 +194,7 @@ eurybox_backup_prepare_services ()
           if [[ $DISK_FOUND -eq 0 ]]
           then
             EURYBOX_BACKUP_TARGETS[$((${#EURYBOX_BACKUP_TARGETS[@]}+1))]=${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NAME,$DISK_NUM]}
-            eurybox_display_message message PREPARE "VM ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]} - detected disk added to the list for backup: ${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NAME,$DISK_NUM]}"
+            eurybox_display_message message BACKUP "VM ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]} - detected disk added to the list for backup: ${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NAME,$DISK_NUM]}"
           fi
         done
       fi
@@ -54,5 +207,52 @@ eurybox_backup_prepare_services ()
       eurybox_export_vm_config ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]}
     fi
   done
+}
+
+#Desc: un-mount the target backup
+#No arg required
+eurybox_backup_umount_target ()
+{
+  local STATUS=1234
+  local NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  local UMOUNT_OUT
+  local BKP_PROTOCOL=${EURYBOX_BACKUP_DESTINATION[PROTOCOL]}
+  if [[ $EURYBOX_LOG_LEVEL = "debug" || $EURYBOX_LOG_LEVEL = "verbose" ]]
+  then
+    local UMOUNT_OPTIONS="-v"
+  else
+    local UMOUNT_OPTIONS=""
+  fi
+
+  
+  while [[ !($STATUS -eq 0) && !($(grep ${EURYBOX_BACKUP_DESTINATION[MOUNT]} /proc/mounts) = "") && !($NB_TRY_LEFT -eq 0) ]]
+  do
+    case $BKP_PROTOCOL in
+      LOCAL )
+        #Nothing to do
+        STATUS=0
+      ;;
+      NFS|SSH|PART )
+        UMOUNT_OUT=`sudo umount $UMOUNT_OPTIONS ${EURYBOX_BACKUP_DESTINATION[MOUNT]} 2>&1`
+        STATUS=$?
+        if [[ !($STATUS -eq 0) ]]
+        then
+          NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+          eurybox_display_message warning BACKUP "Backup target unmount failed and target folder is not empty. Trying to unmount again in 5 seconds - error $STATUS\n$UMOUNT_OUT\n$NB_TRY_LEFT left"
+          sleep 5
+        fi
+      ;;
+      * )
+        eurybox_display_message error BACKUP "Unkown backup target protocol: $BKP_PROTOCOL"
+      ;;
+    esac
+  done
+  if [[ $NB_TRY_LEFT -eq 0 ]]
+  then
+    eurybox_display_message error BACKUP "Backup target unmount failed:\n$UMOUNT_OUT"
+  else
+    eurybox_display_message message BACKUP "Backup target unmount success"
+    eurybox_display_message debug BACKUP "Unmount command output:\n$UMOUNT_OUT"
+  fi
 }
 

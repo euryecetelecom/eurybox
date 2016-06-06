@@ -4,7 +4,7 @@
 euryboxctrl_check_all_vm_halted ()
 {
   #Check that no vm at all are still running
-  EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | awk '($0 != "") {print $2}'`
+  local EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | awk '($0 != "") {print $2}'`
   if [[ !(-z "$EURYBOX_VM_NAME") ]]
   then
     eurybox_display_message error EURYBOXCTRL "There are still VM running: $EURYBOX_VM_NAME"
@@ -15,7 +15,7 @@ euryboxctrl_check_all_services_halted ()
 {
   #Check that no vm at all are still running
 ##  EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | awk '(NR>2) && ($0 != "") {print $2}'`
-
+  local EURYBOX_VM_NAME
   #Check that no services vm are still running
   for ((EURYBOX_SERVICES_NUM=EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM>=1;EURYBOX_SERVICES_NUM--));
   do
@@ -114,7 +114,21 @@ euryboxctrl_create_sign ()
 
 euryboxctrl_discover_available_archives ()
 {
-  eurybox_detect_archives ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]} ${EURYBOX_BACKUP_DESTINATION[PATH]} "*" ${EURYBOX_BACKUP_DESTINATION[MOUNT]} ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]} ${EURYBOX_BACKUP_DESTINATION[HOST]}
+  #Mount backup target
+  eurybox_display_message message EURYBOXCTRL "Mounting backup origin"
+  eurybox_backup_mount_target
+
+  eurybox_detect_archives ${EURYBOX_BACKUP_DESTINATION[MOUNT]}
+  for (( ARCH_NUM=0;ARCH_NUM<${EURYBOX_DETECTED_ARCHIVES[NUM]};ARCH_NUM++ ))
+  do
+    LNAME=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,FILE]}
+    eurybox_detect_archive_content "${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${LNAME}"
+  done
+
+  #unmount backup target
+  eurybox_display_message message EURYBOXCTRL "Unmounting backup origin"
+  eurybox_backup_umount_target
+  
   eurybox_display_detected_archives
 }
 
@@ -141,12 +155,15 @@ euryboxctrl_prepare_backup ()
   EURYBOX_BACKUP_ARCHIVE[NAME]=${EURYBOX_BACKUP_ARCHIVE[NAME]}_$(date +"%Y_%m_%d_%H_%M_%S")
   
   #Detect environment
+  eurybox_display_message message EURYBOXCTRL "Detecting environment"
   eurybox_detect_libvirt_env
 
   #Add disks from config to backup list
+  eurybox_display_message message EURYBOXCTRL "Add configuration disks to backup list"
   eurybox_backup_add_config_disks
 
   #Prepare services description and dependencies for backup
+  eurybox_display_message message EURYBOXCTRL "Preparing services and dependencies for backup"
   eurybox_backup_prepare_services
 
   case $EURYBOX_BACKUP_TYPE in
@@ -155,6 +172,10 @@ euryboxctrl_prepare_backup ()
       eurybox_export_hv_config
     ;;
   esac
+  
+  #Mount backup target
+  eurybox_display_message message EURYBOXCTRL "Mounting backup destination"
+  eurybox_backup_mount_target
 }
 
 euryboxctrl_select_restore_target ()
@@ -162,7 +183,6 @@ euryboxctrl_select_restore_target ()
   if [[ $EURYBOX_RESTORE_TARGET_ACQUISITION = "interactive" ]]
   then
     eurybox_configure_interactive_restoration_target
-    eurybox_detect_archive_content ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]} ${EURYBOX_BACKUP_DESTINATION[PATH]} "${EURYBOX_BACKUP_ARCHIVE[NAME]}.desc" ${EURYBOX_BACKUP_DESTINATION[MOUNT]} ${EURYBOX_BACKUP_DESTINATION[PORT]} ${EURYBOX_BACKUP_DESTINATION[USER]} ${EURYBOX_BACKUP_DESTINATION[HOST]}
   else
     eurybox_display_message warning EURYBOXCTRL "Unknown restoration target acquisition type: $EURYBOX_RESTORE_TARGET_ACQUISITION"
   fi
@@ -220,7 +240,12 @@ euryboxctrl_update_services ()
 
 euryboxctrl_terminate_backup ()
 {
-  #Change archives permissions to read only
-  eurybox_change_files_permissions ${EURYBOX_BACKUP_ARCHIVE[MASK]}
+  #Change archive files permissions
+  eurybox_display_message message EURYBOXCTRL "Changing archive files permissions"
+  eurybox_change_file_permissions "${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}*" ${EURYBOX_BACKUP_ARCHIVE[OWNER]} ${EURYBOX_BACKUP_ARCHIVE[MASK]} ${EURYBOX_BACKUP_ARCHIVE[LABEL]}
+  
+  #Unmount backup target
+  eurybox_display_message message EURYBOXCTRL "Unmounting backup destination"
+  eurybox_backup_umount_target
 }
 

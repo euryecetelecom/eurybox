@@ -5,11 +5,13 @@
 #1 arg required: vm_name
 eurybox_vm_shutdown_acpi ()
 {
-  NAME=$1
+  local NAME=$1
+  local STATUS
   #Waiting for the VM to be stopped
-  EURYBOX_VM_STATE=1
-  EURYBOX_VM_STOPPED=0
-  NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  local EURYBOX_VM_NAME
+  local EURYBOX_VM_STATE=1
+  local EURYBOX_VM_STOPPED=0
+  local NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
   while [[ ( $EURYBOX_VM_STATE -eq 1 ) && !( $NB_TRY_LEFT -eq 0 ) ]]
   do
    EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | grep $NAME`
@@ -49,13 +51,16 @@ eurybox_vm_shutdown_acpi ()
 #4 arg required: vm_name vm_host vm_user vm_port
 eurybox_vm_shutdown_ssh ()
 {
-  NAME=$1  
-  HOST=$2
-  USER=$3
-  PORT=$4
-  EURYBOX_VM_STATE=1
-  EURYBOX_VM_STOPPED=0
-  NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  local NAME=$1
+  local HOST=$2
+  local USER=$3
+  local PORT=$4
+  local EURYBOX_VM_STATE=1
+  local EURYBOX_VM_STOPPED=0
+  local STATUS
+  local EURYBOX_VM_NAME
+  local SSH_OUT
+  local NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
   while [[ ( $EURYBOX_VM_STATE -eq 1 ) && !( $NB_TRY_LEFT -eq 0 ) ]]
   do
     EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | grep $NAME`
@@ -69,7 +74,7 @@ eurybox_vm_shutdown_ssh ()
         STATUS=$?
         if [[ !($STATUS -eq 0) ]]
         then
-          eurybox_display_message warning VM "VM $NAME - stop failed - trying again in 5 seconds: $SSH_OUT / $NB_TRY_LEFT left"
+          eurybox_display_message warning VM "VM $NAME - stop failed - trying again in 5 seconds:\n$SSH_OUT\n$NB_TRY_LEFT left"
           NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
         else
           EURYBOX_VM_STOPPED=1
@@ -78,14 +83,14 @@ eurybox_vm_shutdown_ssh ()
         fi
       else
         NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-        eurybox_display_message debug VM "VM $NAME - still running - trying again in 5 seconds / $NB_TRY_LEFT left"
+        eurybox_display_message debug VM "VM $NAME - still running - trying again in 5 seconds:\n$EURYBOX_VM_NAME\n$NB_TRY_LEFT left"
       fi
      sleep 5
     fi
   done
   if [[ $NB_TRY_LEFT -eq 0 ]]
   then
-    eurybox_display_message error VM "VM $NAME - stop failed - VM still running after $EURYBOX_MAX_RETRY_ON_FAILURE: $EURYBOX_VM_NAME"
+    eurybox_display_message error VM "VM $NAME - stop failed - VM still running after $EURYBOX_MAX_RETRY_ON_FAILURE:\n$EURYBOX_VM_NAME"
   else
     eurybox_display_message message VM "VM $NAME - stop OK"
   fi
@@ -95,14 +100,18 @@ eurybox_vm_shutdown_ssh ()
 #4 arg required: vm_name vm_host vm_user vm_port
 eurybox_vm_start ()
 {
-  NAME=$1  
-  HOST=$2
-  USER=$3
-  PORT=$4
+  local NAME=$1  
+  local HOST=$2
+  local USER=$3
+  local PORT=$4
+  local STATUS
+  local VM_OUT
+  local EURYBOX_VM_AVAILABLE
+  local VIRSH_OUT
   #Check if VM is operationnal (at network level)
-  EURYBOX_VM_STATE=0
-  EURYBOX_VM_STARTED=0
-  NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  local EURYBOX_VM_STATE=0
+  local EURYBOX_VM_STARTED=0
+  local NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
   while [[ ( $EURYBOX_VM_STATE -eq 0 ) && !( $NB_TRY_LEFT -eq 0 ) ]]
   do
     EURYBOX_VM_AVAILABLE=`ssh $EURYBOX_SSH_OPTIONS -p $PORT $USER@$HOST "touch eurybox_check_ssh_ok" 2>&1`
@@ -120,7 +129,7 @@ eurybox_vm_start ()
           VM_OUT=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | grep $NAME`
           if [[ -z "$VM_OUT" ]]
           then
-            eurybox_display_message warning VM "Error on vm $NAME start : $VIRSH_OUT- trying again in 5 seconds / $NB_TRY_LEFT left"
+            eurybox_display_message warning VM "Error on vm $NAME start - trying again in 5 seconds:\n$VIRSH_OUT\n$NB_TRY_LEFT left"
             NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
           else
             eurybox_display_message debug VM "VM $NAME already running - waiting for network contact"
@@ -134,7 +143,7 @@ eurybox_vm_start ()
         fi
       else
         NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-        eurybox_display_message debug VM "VM $NAME - still unreachable - trying again in 5 seconds / $NB_TRY_LEFT left: $EURYBOX_VM_AVAILABLE"
+        eurybox_display_message debug VM "VM $NAME - still unreachable - trying again in 5 seconds\n$EURYBOX_VM_AVAILABLE\n$NB_TRY_LEFT left"
       fi
       sleep 5
     fi
