@@ -22,6 +22,7 @@ eurybox_backup_mount_target ()
   local NMAP_OUT
   local NFS_OUT
   local SSH_OUT
+  local FTP_OUT
   local PART_OUT
   local BKP_PROTOCOL=${EURYBOX_BACKUP_DESTINATION[PROTOCOL]}
   local BKP_DEST=${EURYBOX_BACKUP_DESTINATION[PATH]}
@@ -31,6 +32,7 @@ eurybox_backup_mount_target ()
   local BKP_HOST=${EURYBOX_BACKUP_DESTINATION[HOST]}
   local BKP_TYPE=${EURYBOX_BACKUP_DESTINATION[TYPE]}
   local BKP_PART=${EURYBOX_BACKUP_DESTINATION[PART]}
+  local BKP_PASSWORD=${EURYBOX_BACKUP_DESTINATION[PASSWORD]}
 
   if [[ $EURYBOX_LOG_LEVEL = "debug" || $EURYBOX_LOG_LEVEL = "verbose" ]]
   then
@@ -47,7 +49,7 @@ eurybox_backup_mount_target ()
     then
       eurybox_display_message error BACKUP "Target local mount point directory $BKP_MOUNT doesn't exists and folder creation failed - error $STATUS:\n$MKDIR_OUT"
     else
-      local CHMOD_OUT=`sudo chmod 700 $BKP_MOUNT 2>&1`
+      local CHMOD_OUT=`sudo chmod 777 $BKP_MOUNT 2>&1`
       STATUS=$?
       if [[ !($STATUS -eq 0) ]]
       then
@@ -74,7 +76,7 @@ eurybox_backup_mount_target ()
         STATUS=$?
         if [[ !($STATUS -eq 0) ]]
         then
-          eurybox_display_message warning BACKUP "Backup target $BKP_PROTOCOL server unreacheable on host $BKP_HOST / port $BKP_PORT - trying to contact again in 5 seconds - error $STATUS:\n$NMAP_OUT\n$NB_TRY_LEFT left"
+          eurybox_display_message warning BACKUP "Backup target $BKP_PROTOCOL server unreacheable on host $BKP_HOST / port $BKP_PORT - trying to contact again in 5 seconds - error $STATUS\n$NB_TRY_LEFT left"
           NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
           sleep 5
         else
@@ -89,6 +91,7 @@ eurybox_backup_mount_target ()
                 NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
                 sleep 5
               else
+                eurybox_display_message debug BACKUP "Backup target $BKP_PROTOCOL server reached on host $BKP_HOST / port $BKP_PORT\n$NFS_OUT"
                 MOUNT_OUT=`sudo mount $MOUNT_OPTIONS $EURYBOX_MNT_NFS_OPTIONS -o proto=tcp,port=${BKP_PORT}  -t $BKP_TYPE ${BKP_HOST}:${BKP_DEST} ${BKP_MOUNT} 2>&1`
                 STATUS=$?
                 if [[ !($STATUS -eq 0) ]]
@@ -105,11 +108,11 @@ eurybox_backup_mount_target ()
               STATUS=$?
               if [[ !($STATUS -eq 0) ]]
               then
-                eurybox_display_message warning BACKUP "Backup target $BKP_PROTOCOL server unreacheable on host $BKP_HOST / port $BKP_PORT - trying to contact again in 5 seconds - error $STATUS:\n$SSH_OUT\n$NB_TRY_LEFT left"
+                eurybox_display_message warning BACKUP "Backup SSH server unreacheable on host $BKP_HOST / port $BKP_PORT - trying to contact again in 5 seconds - error $STATUS:\n$SSH_OUT\n$NB_TRY_LEFT left"
                 NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
                 sleep 5
               else
-                eurybox_display_message debug BACKUP "Backup target $BKP_PROTOCOL server reached on host $BKP_HOST / port $BKP_PORT"
+                eurybox_display_message debug BACKUP "Backup target $BKP_PROTOCOL server reached on host $BKP_HOST / port $BKP_PORT\n$SSH_OUT"
                 MOUNT_OUT=`sshfs $EURYBOX_MNT_SSHFS_OPTIONS -p $BKP_PORT ${BKP_USER}@${BKP_HOST}:${BKP_DEST} ${BKP_MOUNT} 2>&1`
                 STATUS=$?
                 if [[ !($STATUS -eq 0) ]]
@@ -121,7 +124,25 @@ eurybox_backup_mount_target ()
               fi
             ;;
             FTP )
-              eurybox_display_message error BACKUP "Backup destination FTP not implemented yet"              
+              #Check access
+              FTP_OUT=`sudo lftp -p ${BKP_PORT} ftp://${BKP_USER}:${BKP_PASSWORD}@${BKP_HOST} -e "quit" 2>&1`
+              STATUS=$?
+              if [[ !($STATUS -eq 0) ]]
+              then
+                eurybox_display_message warning BACKUP "Backup target $BKP_PROTOCOL server unreacheable on host $BKP_HOST / port $BKP_PORT - trying to contact again in 5 seconds - error $STATUS:\n$FTP_OUT\n$NB_TRY_LEFT left"
+                NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+                sleep 5
+              else
+                eurybox_display_message debug BACKUP "Backup target $BKP_PROTOCOL server reached on host $BKP_HOST / port $BKP_PORT\n$FTP_OUT"
+                MOUNT_OUT=`sudo curlftpfs $EURYBOX_MNT_FTPFS_OPTIONS ftp://${BKP_USER}:${BKP_PASSWORD}@${BKP_HOST}:${BKP_PORT}${BKP_DEST} ${BKP_MOUNT} 2>&1`
+                STATUS=$?
+                if [[ !($STATUS -eq 0) ]]
+                then
+                  NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+                  eurybox_display_message warning BACKUP "Backup target FTPFS mount failed and target folder is empty - trying to mount again in 5 seconds - error $STATUS:\n$MOUNT_OUT\n$NB_TRY_LEFT left"
+                  sleep 5
+                fi
+              fi
             ;;
           esac
         fi
@@ -156,7 +177,7 @@ eurybox_backup_mount_target ()
 
   if [[ $NB_TRY_LEFT -eq 0 ]]
   then
-    eurybox_display_message error BACKUP "Backup target mount failed:\n$MOUNT_OUT $NFS_OUT $NMAP_OUT $SSH_OUT $PART_OUT"
+    eurybox_display_message error BACKUP "Backup target mount failed:\n$MOUNT_OUT $NFS_OUT $NMAP_OUT $SSH_OUT $FTP_OUT $PART_OUT"
   else
     eurybox_display_message message BACKUP "Backup target mount success"
     eurybox_display_message debug BACKUP "Mount command output:\n$MOUNT_OUT"
@@ -232,7 +253,7 @@ eurybox_backup_umount_target ()
         #Nothing to do
         STATUS=0
       ;;
-      NFS|SSH|PART )
+      NFS|SSH|FTP|PART )
         UMOUNT_OUT=`sudo umount $UMOUNT_OPTIONS ${EURYBOX_BACKUP_DESTINATION[MOUNT]} 2>&1`
         STATUS=$?
         if [[ !($STATUS -eq 0) ]]

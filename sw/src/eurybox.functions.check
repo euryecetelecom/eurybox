@@ -126,7 +126,8 @@ eurybox_check_configuration ()
   EURYBOX_NMAP_OPTIONS="--host-timeout $EURYBOX_NETWORK_TIMEOUT --max-retries $EURYBOX_MAX_RETRY_ON_FAILURE"
   EURYBOX_LS_OPTIONS="-x"
   EURYBOX_MNT_NFS_OPTIONS="-o hard,retry=$EURYBOX_MAX_RETRY_ON_FAILURE,rsize=8192,wsize=8192,timeo=${EURYBOX_NETWORK_TIMEOUT}0"
-  EURYBOX_MNT_SSHFS_OPTIONS="-o allow_root,large_read ${EURYBOX_SSH_OPTIONS}"
+  EURYBOX_MNT_SSHFS_OPTIONS="-o allow_root ${EURYBOX_SSH_OPTIONS}"
+  EURYBOX_MNT_FTPFS_OPTIONS="-o allow_root,connect_timeout=${EURYBOX_NETWORK_TIMEOUT}"
   case $EURYBOX_LOG_LEVEL in
     debug )
       set -xv
@@ -135,7 +136,8 @@ eurybox_check_configuration ()
       EURYBOX_LS_OPTIONS+=" -a"
       EURYBOX_MNT_NFS_OPTIONS+=" -v"
       EURYBOX_MNT_SSHFS_OPTIONS+=" -oLogLevel=debug"
-      EURYBOX_VIRSH_OPTIONS+=" -q -d 0"
+      EURYBOX_MNT_FTPFS_OPTIONS+=" -v"
+      EURYBOX_VIRSH_OPTIONS+=" -q -d 2"
     ;;
     verbose )
       set -v
@@ -144,14 +146,15 @@ eurybox_check_configuration ()
       EURYBOX_LS_OPTIONS+=" -l"
       EURYBOX_MNT_NFS_OPTIONS+=" -v"
       EURYBOX_MNT_SSHFS_OPTIONS+=" -oLogLevel=verbose"
-      EURYBOX_VIRSH_OPTIONS+=" -q -d 2"
+      EURYBOX_MNT_FTPFS_OPTIONS+=" -v"
+      EURYBOX_VIRSH_OPTIONS+=" -q -d 4"
     ;;
     info )
       EURYBOX_SSH_OPTIONS+=" -oLogLevel=info"
       EURYBOX_NMAP_OPTIONS+=" -d0 -v"
       EURYBOX_LS_OPTIONS+=" -l"
       EURYBOX_MNT_SSHFS_OPTIONS+=" -oLogLevel=info"
-      EURYBOX_VIRSH_OPTIONS+=" -q -d 4"
+      EURYBOX_VIRSH_OPTIONS+=" -q -d 6"
     ;;
     warning )
       EURYBOX_SSH_OPTIONS+=" -oLogLevel=info"
@@ -167,11 +170,12 @@ eurybox_check_configuration ()
     ;;
   esac
   eurybox_display_message debug CHECK "ssh options: $EURYBOX_SSH_OPTIONS"
-  eurybox_display_message debug CHECK "sshfs options: $EURYBOX_MNT_SSHFS_OPTIONS"
   eurybox_display_message debug CHECK "nmap options: $EURYBOX_NMAP_OPTIONS"
   eurybox_display_message debug CHECK "ls options: $EURYBOX_LS_OPTIONS"
-  eurybox_display_message debug CHECK "nfs mount options: $EURYBOX_MNT_NFS_OPTIONS"
   eurybox_display_message debug CHECK "virsh options: $EURYBOX_VIRSH_OPTIONS"
+  eurybox_display_message debug CHECK "nfs mount options: $EURYBOX_MNT_NFS_OPTIONS"
+  eurybox_display_message debug CHECK "sshfs mount options: $EURYBOX_MNT_SSHFS_OPTIONS"
+  eurybox_display_message debug CHECK "ftpfs mount options: $EURYBOX_MNT_FTPFS_OPTIONS"
 }
 
 #Desc: verify the kernel is Linux
@@ -257,7 +261,7 @@ eurybox_check_environment ()
   local BKP_SPACE_LEFT
   local BKP_ACCESS_OK
   #Check external sotfware used
-  eurybox_check_command grep sudo ssh openssl tar par2 virsh sha512sum sha256sum awk pigz df tail virt-sysprep tput nmap rpcinfo pbzip2 sshfs curlftpfs cryptsetup
+  eurybox_check_command grep sudo ssh openssl tar par2 virsh sha512sum sha256sum awk pigz df tail virt-sysprep tput nmap rpcinfo pbzip2 sshfs curlftpfs lftp cryptsetup
   #Check kernel capabilities
   eurybox_check_kernel
   #Check distribution is coherent with configuration
@@ -308,7 +312,7 @@ eurybox_check_environment ()
       fi
     fi
     #Check bkp destination access (READ/WRITE)
-    BKP_ACCESS_OK=`sudo touch ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/test && sudo rm ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/test`
+    BKP_ACCESS_OK=`sudo sh -c "touch ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/test && rm -Rf ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/test"`
     STATUS=$?
     if [[ !($STATUS -eq 0) ]]
     then
