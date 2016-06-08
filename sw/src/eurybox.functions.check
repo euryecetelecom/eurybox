@@ -3,6 +3,40 @@
 
 #TODO: Implement lockfile and check if not already running
 
+#Desc: verify the archive access and content
+#No arg required
+eurybox_check_arch ()
+{
+  local ARCH_OUT
+  local STATUS
+  local ARCH_FORMAT="${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},FORMAT]}"
+  local ARCH_ENC="${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},ENC]}"
+  local ARCH_FILE="${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},FILENAME]}.${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},FORMAT]}"
+  case ${ARCH_FORMAT} in
+    "tar" ) TAR_OPTIONS="-Stv";;
+    "tar.gz" ) TAR_OPTIONS="-Stv --use-compress-program=pigz";;
+    "tar.bz2" ) TAR_OPTIONS="-Stv --use-compress-program=lbzip2";;
+  esac
+  if [[ ${ARCH_ENC} = "true" ]]
+  then
+    ARCH_OUT=`sudo sh -c "openssl enc -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -d -in ${ARCH_FILE} -k ${EURYBOX_BACKUP_ARCHIVE[PASSWORD]} | tar ${TAR_OPTIONS}" 2>&1`
+    STATUS=$?
+  else
+    ARCH_OUT=`sudo sh -c "tar ${TAR_OPTIONS}f ${ARCH_FILE}" 2>&1`
+    STATUS=$?
+  fi
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_display_message warning CHECK "Archive use check failed - error $STATUS:\n$ARCH_OUT"
+    EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},ARCH_STATUS]="KO"
+  else
+    EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},ARCH_STATUS]="OK"
+    eurybox_display_message message CHECK "Archive use check - OK"
+    eurybox_display_message debug CHECK "Archive command output:\n$ARCH_OUT"
+  fi
+}
+
+
 #Desc: check the input arguments
 #TODO: implement arguments usage (debug mode / config file ...) and checking
 eurybox_check_arguments ()
@@ -177,6 +211,94 @@ eurybox_check_configuration ()
   eurybox_display_message debug CHECK "sshfs mount options: $EURYBOX_MNT_SSHFS_OPTIONS"
   eurybox_display_message debug CHECK "ftpfs mount options: $EURYBOX_MNT_FTPFS_OPTIONS"
 }
+
+#Desc: verify the archive ECCF and try to repair it
+#No arg required
+eurybox_check_eccf ()
+{
+  local ECC_OUT
+  local STATUS
+  local ECC_FORMAT="${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},FEC]}"
+  local ECC_FILE="${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},FILENAME]}.${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},FORMAT]}"
+  local ECC_FILE_ROOT="${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},FILENAME]}"
+  case "${ECC_FORMAT}" in
+    par2 )
+      ECC_OUT=`sudo sh -c "par2 r ${ECC_FILE_ROOT}.par2" 2>&1`
+      STATUS=$?
+    ;;
+    zfec )
+      ECC_OUT=`sudo sh -c "zunfec -f -o ${ECC_FILE}.recovered ${ECC_FILE}.*.fec" 2>&1`
+      STATUS=$?
+      if [[ ($STATUS -eq 0) ]]
+      then
+        EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},ECC_STATUS]="OK"
+        eurybox_display_message message CHECK "Archive ECC check/recovery - recovered file: ${ECC_FILE}.recovered"
+        eurybox_display_message debug CHECK "ECC command output:\n$ECC_OUT"
+        ECC_OUT=`sudo sh -c "mv ${ECC_FILE} ${ECC_FILE}.corrupted" 2>&1`
+        STATUS=$?
+        if [[ !($STATUS -eq 0) ]]
+        then
+          eurybox_display_message warning CHECK "Archive ECC check/recovery success but cannot move corrupted archive - error $STATUS:\n$ECC_OUT"
+        else
+          ECC_OUT=`sudo sh -c "mv ${ECC_FILE}.recovered ${ECC_FILE}" 2>&1`
+          STATUS=$?
+          if [[ !($STATUS -eq 0) ]]
+          then
+            eurybox_display_message warning CHECK "Archive ECC check/recovery success but cannot move recovered archive - error $STATUS:\n$ECC_OUT"
+          else
+            eurybox_display_message message CHECK "Archive ECC check/recovery - OK"
+            eurybox_display_message debug CHECK "ECC command output:\n$ECC_OUT"
+          fi
+        fi
+      fi
+    ;;
+    * )
+      eurybox_display_message error CHECK "Archive ECC format unknown: ${ECC_FORMAT}"
+    ;;
+  esac
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_display_message warning CHECK "Archive ECC check/recovery failed - error $STATUS:\n$ECC_OUT"
+    EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},ECC_STATUS]="KO"
+  else
+    EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},ECC_STATUS]="OK"
+    eurybox_display_message message CHECK "Archive ECC check/recovery - OK"
+    eurybox_display_message debug CHECK "ECC command output:\n$ECC_OUT"
+  fi
+}
+
+#Desc: verify the archive hash
+#No arg required
+eurybox_check_hash()
+{
+  local HASH_OUT
+  local STATUS
+  local HASH_FORMAT="${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},HASH]}"
+  local HASH_FILE="${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},FILENAME]}.${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},HASH]}"
+  case "${HASH_FORMAT}" in
+    sha256 )
+      HASH_OUT=`sudo sh -c "sha256sum -c $HASH_FILE" 2>&1`
+      STATUS=$?
+    ;;
+    sha512 )
+      HASH_OUT=`sudo sh -c "sha512sum -c $HASH_FILE" 2>&1`
+      STATUS=$?
+    ;;
+    * )
+      eurybox_display_message error CHECK "Archive hash format unknown: ${HASH_FORMAT}"
+    ;;
+  esac
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_display_message warning CHECK "Archive hash check failed - error $STATUS:\n$HASH_OUT"
+    EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},HASH_STATUS]="KO"
+  else
+    EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},HASH_STATUS]="OK"
+    eurybox_display_message message CHECK "Archive hash check - OK"
+    eurybox_display_message debug CHECK "Hash command output:\n$HASH_OUT"
+  fi
+}
+
 
 #Desc: verify the kernel is Linux
 #No arg required

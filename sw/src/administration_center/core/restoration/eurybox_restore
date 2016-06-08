@@ -49,11 +49,8 @@ euryboxctrl_discover_available_archives
 #Select archive to be restored
 euryboxctrl_select_restore_target
 
-#Check integrity of archive file
-euryboxctrl_check_desc
-euryboxctrl_check_hash
-euryboxctrl_check_eccf
-euryboxctrl_check_arch
+#Prepare environment for restoration
+euryboxctrl_prepare_restore
 
 case $EURYBOX_RESTORE_TYPE in
   cloned_vm )
@@ -79,7 +76,7 @@ case $EURYBOX_RESTORE_TYPE in
   ;;
 esac
 
-
+euryboxctrl_terminate_restore
 
 
 #Finished

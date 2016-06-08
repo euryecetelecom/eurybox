@@ -20,12 +20,12 @@ eurybox_create_archive_desc ()
   then
     DESCRIPTION+="ENCRYPTION_ALGORITHM:${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]}\nARCHIVE_CONTENT:\n"
     #FIXME: function to read archive with variable archive format required here
-    DESCRIPTION+=`sudo sh -c "openssl enc -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -d -in ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]} -k ${EURYBOX_BACKUP_ARCHIVE[PASSWORD]} | tar ${TAR_OPTIONS}"`
+    DESCRIPTION+=`sudo sh -c "openssl enc -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -d -in ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]} -k ${EURYBOX_BACKUP_ARCHIVE[PASSWORD]} | tar ${TAR_OPTIONS}" 2>&1`
     STATUS=$?
   else
     DESCRIPTION+="ARCHIVE_CONTENT:\n"
     #FIXME: function to read archive with variable archive format required here
-    DESCRIPTION+=`sudo sh -c "tar ${TAR_OPTIONS}f ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]}"`
+    DESCRIPTION+=`sudo sh -c "tar ${TAR_OPTIONS}f ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]}" 2>&1`
     STATUS=$?
   fi
   if [[ !($STATUS -eq 0) ]]
@@ -67,9 +67,9 @@ eurybox_create_archive_tar ()
     TAR_OPTIONS="-"
   fi
   case ${EURYBOX_BACKUP_ARCHIVE[FORMAT]} in
-    "tar" ) TAR_OPTIONS="${TAR_OPTIONS}Sc";;
-    "tar.gz" ) TAR_OPTIONS="${TAR_OPTIONS}Sc --use-compress-program=pigz";;
-    "tar.bz2" ) TAR_OPTIONS="${TAR_OPTIONS}Sc --use-compress-program=pbzip2";;
+    "tar" ) TAR_OPTIONS="${TAR_OPTIONS}Sch";;
+    "tar.gz" ) TAR_OPTIONS="${TAR_OPTIONS}Sch --use-compress-program=pigz";;
+    "tar.bz2" ) TAR_OPTIONS="${TAR_OPTIONS}Sch --use-compress-program=pbzip2";;
   esac
   if [[ ${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]} = "true" ]]
   then

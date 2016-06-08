@@ -31,18 +31,20 @@ eurybox_detect_archive_content ()
     BKP_COMP=`echo "${ARCH_DESC}" | grep "ARCHIVE_FORMAT" | awk -F":" '{print $NF}'`
     case $BKP_COMP in
       "" )
-        eurybox_display_message warning DETECT "Archive description compression search failed"
+        eurybox_display_message warning DETECT "Archive description compression/format search failed"
         ;;
       tar )
+        EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,FORMAT]=$BKP_COMP
         EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,COMP]="none"
-        eurybox_display_message debug DETECT "Archive description compression search success - found: none"
+        eurybox_display_message debug DETECT "Archive description compression/format search success - found: none"
         ;;
       tar.gz|tar.bz2 )
+        EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,FORMAT]=$BKP_COMP
         EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,COMP]=$BKP_COMP
-        eurybox_display_message debug DETECT "Archive description compression search success - found: $BKP_COMP"
+        eurybox_display_message debug DETECT "Archive description compression/format search success - found: $BKP_COMP"
       ;;
       * )
-        eurybox_display_message warning DETECT "Archive description compression search failed - unknown backup compression found: $BKP_COMP"
+        eurybox_display_message warning DETECT "Archive description compression/format search failed - unknown backup format found: $BKP_COMP"
       ;;
     esac
     BKP_TYPE=`echo "${ARCH_DESC}" | grep "ARCHIVE_TYPE" | awk -F":" '{print $NF}'`
@@ -104,25 +106,27 @@ eurybox_detect_archive_content ()
 #1 arg required: search_path
 eurybox_detect_archives ()
 {
-  local DESTINATION="$1/*"
+  local DESTINATION=$1
   local BKP_LIST
-  local FILES_LIST=`sudo ls $EURYBOX_LS_OPTIONS $DESTINATION 2>&1`
+  local FILES_LIST=`sudo ls $DESTINATION 2>&1`
   local STATUS=$?
   if [[ !($STATUS -eq 0) ]]
   then
-    eurybox_display_message error DETECT "Archive description listing not found: \n$FILES_LIST"
+    eurybox_display_message error DETECT "Archive description listing failed - error $STATUS\n$FILES_LIST"
   else
     #Filter by desc extension, extract filename and store in an array
     BKP_LIST=( $(echo "$FILES_LIST" | awk -F"." '($NF == "desc") {print $0}' | awk -F"/" '{print $NF}') )
     if [[ ${BKP_LIST[@]} = "" ]]
     then
-      eurybox_display_message error DETECT "No archive found"
+      eurybox_display_message error DETECT "No archive found in following files\n$FILES_LIST"
     else
       EURYBOX_DETECTED_ARCHIVES[NUM]=${#BKP_LIST[@]}
       eurybox_display_message message DETECT "${EURYBOX_DETECTED_ARCHIVES[NUM]} archive description(s) found"
+      eurybox_display_message debug DETECT "Detected:\n${BKP_LIST[@]}"
       for (( ARCH_NUM=0;ARCH_NUM<${EURYBOX_DETECTED_ARCHIVES[NUM]};ARCH_NUM++ ))
       do
         EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,FILE]=${BKP_LIST[$ARCH_NUM]}
+        EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,FILENAME]=`echo "${BKP_LIST[$ARCH_NUM]}" | awk -F"." '{ for(i=1; i<(NF); i++) { if(i==1) { filename=$i } else { filename=filename"."$i } } ; print filename }'`
         EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,VERSION]=`echo "${BKP_LIST[$ARCH_NUM]}" | awk -F"." '{ for(i=1; i<(NF); i++) { if(i==1) { version=$i } else { version=version"."$i } } ; print version }'`
         EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,NAME]=`echo "${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,VERSION]}" | awk -F"_" '{ for(i=1; i<(NF-5); i++) { if(i==1) { name=$i } else { name=name"_"$i } } ; print name }'`
         EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TIME]=`echo "${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,VERSION]}" | awk -F"_" '{ for(i=(NF-5); i<=NF; i++) { if(i==(NF-5)) { name=$i } else { name=name"_"$i } } ; print name }'`

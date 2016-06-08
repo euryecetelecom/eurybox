@@ -19,7 +19,7 @@ eurybox_configure_interactive_restoration_target ()
     eurybox_display_message error CONFIGURE  "Selected archive unavailable: ${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]}"
   else
     EURYBOX_BACKUP_ARCHIVE[NAME]="${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},VERSION]}"
-    eurybox_display_message message CONFIGURE "Selected archive: ${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]} / ${EURYBOX_BACKUP_ARCHIVE[NAME]}"
+    eurybox_display_message message CONFIGURE "Selected archive: ${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]} / ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},FILENAME]}"
   fi
 }
 

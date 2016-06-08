@@ -29,7 +29,8 @@ euryboxctrl_check_all_services_halted ()
 
 euryboxctrl_check_arch ()
 {
-  eurybox_display_message warning EURYBOXCTRL "Checking the archive file - NOT IMPLEMENTED YET"
+  eurybox_display_message message EURYBOXCTRL "Checking the archive file"
+  eurybox_check_arch
 }
 
 euryboxctrl_check_desc ()
@@ -39,17 +40,20 @@ euryboxctrl_check_desc ()
 
 euryboxctrl_check_eccf ()
 {
-  eurybox_display_message warning EURYBOXCTRL "Checking the error correcting codes files - NOT IMPLEMENTED YET"
+  eurybox_display_message message EURYBOXCTRL "Checking the error correcting codes files"
+  eurybox_check_eccf
 }
 
 euryboxctrl_check_hash ()
 {
-  eurybox_display_message warning EURYBOXCTRL "Checking the hash file - NOT IMPLEMENTED YET"
+  eurybox_display_message message EURYBOXCTRL "Checking the hash file"
+  eurybox_check_hash
 }
 
 euryboxctrl_check_sign ()
 {
-  eurybox_display_message warning EURYBOXCTRL "Checking the signature file - NOT IMPLEMENTED YET"
+  eurybox_display_message warning EURYBOXCTRL "Checking the signature file - NOT IMPLEMENTED YET / ALWAYS OK RETURNED"
+  EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},SIGN_STATUS]="OK"
 }
 
 euryboxctrl_create_arch ()
@@ -156,6 +160,61 @@ euryboxctrl_prepare_backup ()
   eurybox_backup_mount_target
 }
 
+euryboxctrl_prepare_restore ()
+{
+  #Mount backup target
+  eurybox_display_message message EURYBOXCTRL "Mounting backup origin"
+  eurybox_backup_mount_target
+
+  #Check archive and associated files integrity
+  euryboxctrl_check_hash
+
+  if [[ ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},HASH_STATUS]} = "KO" ]]
+  then
+    eurybox_display_message message EURYBOXCTRL "Trying to repair archive with FEC data"
+    euryboxctrl_check_eccf
+    if [[ ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},ECC_STATUS]} = "KO" ]]
+    then
+      #Un-mount backup target
+      eurybox_display_message message EURYBOXCTRL "Unmounting backup origin"
+      eurybox_backup_umount_target
+      eurybox_display_message error EURYBOXCTRL "FEC reparation of archive failed - restoration cannot continue"
+    else
+      euryboxctrl_check_hash
+      if [[ ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},HASH_STATUS]} = "KO" ]]
+      then
+        eurybox_display_message message EURYBOXCTRL "Unmounting backup origin"
+        eurybox_backup_umount_target
+        eurybox_display_message error EURYBOXCTRL "FEC reparation of archive success but hash still mismatch - restoration cannot continue"
+      else
+        eurybox_display_message message EURYBOXCTRL "Unmounting backup origin"
+        eurybox_backup_umount_target
+        eurybox_display_message error EURYBOXCTRL "Selected archive was corrupted - FEC reparation of archive has been successfull and hash verification success - restoration can be tried again"
+      fi
+    fi
+  else
+    euryboxctrl_check_sign
+    if [[ ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},SIGN_STATUS]} = "KO" ]]
+    then
+      #Un-mount backup target
+      eurybox_display_message message EURYBOXCTRL "Unmounting backup origin"
+      eurybox_backup_umount_target
+      eurybox_display_message error EURYBOXCTRL "Signature verification of archive failed - restoration cannot continue"
+    else
+      euryboxctrl_check_arch
+      if [[ ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},ARCH_STATUS]} = "KO" ]]
+      then
+        #Un-mount backup target
+        eurybox_display_message message EURYBOXCTRL "Unmounting backup origin"
+        eurybox_backup_umount_target
+        eurybox_display_message error EURYBOXCTRL "Hash and signature OK but archive check failed - restoration cannot continue"
+      else
+        eurybox_display_message message EURYBOXCTRL "Archive origin checks are OK - restoration can continue"
+      fi
+    fi
+  fi
+}
+
 euryboxctrl_select_restore_target ()
 {
   if [[ $EURYBOX_RESTORE_TARGET_ACQUISITION = "interactive" ]]
@@ -222,6 +281,13 @@ euryboxctrl_terminate_backup ()
   eurybox_display_message message EURYBOXCTRL "Changing archive files permissions"
   eurybox_change_file_permissions "${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}*" ${EURYBOX_BACKUP_ARCHIVE[OWNER]} ${EURYBOX_BACKUP_ARCHIVE[MASK]} ${EURYBOX_BACKUP_ARCHIVE[LABEL]}
   
+  #Unmount backup target
+  eurybox_display_message message EURYBOXCTRL "Unmounting backup destination"
+  eurybox_backup_umount_target
+}
+
+euryboxctrl_terminate_restore ()
+{
   #Unmount backup target
   eurybox_display_message message EURYBOXCTRL "Unmounting backup destination"
   eurybox_backup_umount_target
