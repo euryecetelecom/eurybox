@@ -115,6 +115,8 @@ eurybox_display_detected_archives ()
     local COMP=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,COMP]}
     local TYPE=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TYPE]}
     local VERS=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,VERS]}
+    local FEC=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,FEC]}
+    local HASH=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,HASH]}
     local YEAR=`echo ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TIME]} | awk -F"_" '{ print $1 }'`
     local MONTH=`echo ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TIME]} | awk -F"_" '{ print $2 }'`
     local DAY=`echo ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TIME]} | awk -F"_" '{ print $3 }'`
@@ -124,7 +126,7 @@ eurybox_display_detected_archives ()
     if [[ $NAME != $PREVIOUS_NAME ]]
     then
       echo "------------ [[ ARCHIVE: $NAME ]] ------------"
-      echo "YEAR \\ MONTH \\ DAY @ HOUR:MINUTE:SECOND | TYPE | VERS | ENC | COMP | ID"
+      echo "YEAR \\ MONTH \\ DAY @ HOUR:MINUTE:SECOND | TYPE | VERS | ENCR | COMP | FECC | HASH | ID"
       PREVIOUS_YEAR=""
       PREVIOUS_MONTH=""
     fi
@@ -163,13 +165,13 @@ eurybox_display_detected_archives ()
     esac
     case $ENC in
       false )
-        ARCH_DESC="$ARCH_DESC |    "
+        ARCH_DESC="$ARCH_DESC |     "
       ;;
       true )
-        ARCH_DESC="$ARCH_DESC |  X "
+        ARCH_DESC="$ARCH_DESC |  X  "
       ;;
       * )
-        ARCH_DESC="$ARCH_DESC |  ? "
+        ARCH_DESC="$ARCH_DESC |  ?  "
       ;;
     esac
     case $COMP in
@@ -184,7 +186,31 @@ eurybox_display_detected_archives ()
      ;;
      * )
        ARCH_DESC="$ARCH_DESC |  ?  "
-       echo "$COMP"
+     ;;
+    esac
+    case $FEC in
+     none )
+       ARCH_DESC="$ARCH_DESC |     "
+     ;;
+     par2 )
+       ARCH_DESC="$ARCH_DESC | PAR2"
+     ;;
+     zfec )
+       ARCH_DESC="$ARCH_DESC | ZFEC"
+     ;;
+     * )
+       ARCH_DESC="$ARCH_DESC |  ?  "
+     ;;
+    esac
+    case $HASH in
+     none )
+       ARCH_DESC="$ARCH_DESC |     "
+     ;;
+     sha512|sha256 )
+       ARCH_DESC="$ARCH_DESC | SHA "
+     ;;
+     * )
+       ARCH_DESC="$ARCH_DESC |  ?  "
      ;;
     esac
     ARCH_DESC="$ARCH_DESC | $ARCH_NUM"

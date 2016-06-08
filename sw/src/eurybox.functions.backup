@@ -118,7 +118,7 @@ eurybox_backup_mount_target ()
                 if [[ !($STATUS -eq 0) ]]
                 then
                   NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-                  eurybox_display_message warning BACKUP "Backup target SSHFS mount failed and target folder is empty - trying to mount again in 5 seconds - error $STATUS:\n$MOUNT_OUT\n$NB_TRY_LEFT left"
+                  eurybox_display_message warning BACKUP "Backup target SSHFS mount failed - trying to mount again in 5 seconds - error $STATUS:\n$MOUNT_OUT\n$NB_TRY_LEFT left"
                   sleep 5
                 fi
               fi
@@ -139,7 +139,7 @@ eurybox_backup_mount_target ()
                 if [[ !($STATUS -eq 0) ]]
                 then
                   NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-                  eurybox_display_message warning BACKUP "Backup target FTPFS mount failed and target folder is empty - trying to mount again in 5 seconds - error $STATUS:\n$MOUNT_OUT\n$NB_TRY_LEFT left"
+                  eurybox_display_message warning BACKUP "Backup target FTPFS mount failed - trying to mount again in 5 seconds - error $STATUS:\n$MOUNT_OUT\n$NB_TRY_LEFT left"
                   sleep 5
                 fi
               fi

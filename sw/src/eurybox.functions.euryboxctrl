@@ -54,18 +54,10 @@ euryboxctrl_check_sign ()
 
 euryboxctrl_create_arch ()
 {
-
   #Create the archive
   eurybox_display_message message EURYBOXCTRL "Creating the archive file"
-  case "${EURYBOX_BACKUP_ARCHIVE[FORMAT]}" in
-    tar|tar.gz|tar.bz2 )
-      eurybox_create_archive_tar
-    ;;
-    * )
-      eurybox_display_message error EURYBOXCTRL "Archive format unknown: ${EURYBOX_BACKUP_ARCHIVE[FORMAT]}."
-    ;;
-  esac
-  
+  eurybox_create_archive_tar
+
   #Flush temporary directory
   eurybox_flush_directory $EURYBOX_BACKUP_TMP_FOLDER
 }
@@ -81,28 +73,14 @@ euryboxctrl_create_eccf ()
 {
   #Create the error correcting file
   eurybox_display_message message EURYBOXCTRL "Creating the error correcting codes files"
-  case "${EURYBOX_BACKUP_ARCHIVE[ECC]}" in
-    par2 )
-      eurybox_create_archive_par
-    ;;
-    * )
-      eurybox_display_message error EURYBOXCTRL "Archive ECC type unknown: ${EURYBOX_BACKUP_ARCHIVE[ECC]}."
-    ;;
-  esac
+  eurybox_create_archive_fec
 }
 
 euryboxctrl_create_hash ()
 {
   #Create the associated hash file
   eurybox_display_message message EURYBOXCTRL "Creating the hash file"
-  case "${EURYBOX_BACKUP_ARCHIVE[HASH]}" in
-    sha256|sha512 )
-      eurybox_create_archive_sha
-    ;;
-    * )
-      eurybox_display_message error EURYBOXCTRL "Archive HASH type unknown: ${EURYBOX_BACKUP_ARCHIVE[HASH]}."
-    ;;
-  esac
+  eurybox_create_archive_hash
 }
 
 euryboxctrl_create_sign ()

@@ -125,7 +125,7 @@ eurybox_check_configuration ()
   EURYBOX_SSH_OPTIONS="-oPasswordAuthentication=no -oConnectTimeout=$EURYBOX_NETWORK_TIMEOUT -oConnectionAttempts=$EURYBOX_MAX_RETRY_ON_FAILURE"
   EURYBOX_NMAP_OPTIONS="--host-timeout $EURYBOX_NETWORK_TIMEOUT --max-retries $EURYBOX_MAX_RETRY_ON_FAILURE"
   EURYBOX_LS_OPTIONS="-x"
-  EURYBOX_MNT_NFS_OPTIONS="-o hard,retry=$EURYBOX_MAX_RETRY_ON_FAILURE,rsize=8192,wsize=8192,timeo=${EURYBOX_NETWORK_TIMEOUT}0"
+  EURYBOX_MNT_NFS_OPTIONS="-o hard,retry=$EURYBOX_MAX_RETRY_ON_FAILURE,timeo=${EURYBOX_NETWORK_TIMEOUT}0"
   EURYBOX_MNT_SSHFS_OPTIONS="-o allow_root ${EURYBOX_SSH_OPTIONS}"
   EURYBOX_MNT_FTPFS_OPTIONS="-o allow_root,connect_timeout=${EURYBOX_NETWORK_TIMEOUT}"
   case $EURYBOX_LOG_LEVEL in
@@ -147,14 +147,14 @@ eurybox_check_configuration ()
       EURYBOX_MNT_NFS_OPTIONS+=" -v"
       EURYBOX_MNT_SSHFS_OPTIONS+=" -oLogLevel=verbose"
       EURYBOX_MNT_FTPFS_OPTIONS+=" -v"
-      EURYBOX_VIRSH_OPTIONS+=" -q -d 4"
+      EURYBOX_VIRSH_OPTIONS+=" -q -d 3"
     ;;
     info )
       EURYBOX_SSH_OPTIONS+=" -oLogLevel=info"
       EURYBOX_NMAP_OPTIONS+=" -d0 -v"
       EURYBOX_LS_OPTIONS+=" -l"
       EURYBOX_MNT_SSHFS_OPTIONS+=" -oLogLevel=info"
-      EURYBOX_VIRSH_OPTIONS+=" -q -d 6"
+      EURYBOX_VIRSH_OPTIONS+=" -q -d 4"
     ;;
     warning )
       EURYBOX_SSH_OPTIONS+=" -oLogLevel=info"
@@ -261,7 +261,7 @@ eurybox_check_environment ()
   local BKP_SPACE_LEFT
   local BKP_ACCESS_OK
   #Check external sotfware used
-  eurybox_check_command grep sudo ssh openssl tar par2 virsh sha512sum sha256sum awk pigz df tail virt-sysprep tput nmap rpcinfo pbzip2 sshfs curlftpfs lftp cryptsetup
+  eurybox_check_command grep sudo ssh openssl tar par2 zfec virsh sha512sum sha256sum awk df tail virt-sysprep tput nmap rpcinfo pigz pbzip2 sshfs curlftpfs lftp cryptsetup
   #Check kernel capabilities
   eurybox_check_kernel
   #Check distribution is coherent with configuration

@@ -71,13 +71,13 @@ eurybox_detect_archive_content ()
         eurybox_display_message warning DETECT "Archive description version search failed - unknown backup version found: $BKP_VERS"
       ;;
     esac
-    BKP_ECC=`echo "${ARCH_DESC}" | grep "ECC_FORMAT" | awk -F":" '{print $NF}'`
+    BKP_ECC=`echo "${ARCH_DESC}" | grep "FEC_FORMAT" | awk -F":" '{print $NF}'`
     case $BKP_ECC in
       "" )
         eurybox_display_message warning DETECT "Archive description correcting codes search failed"
         ;;
-      par2 )
-        EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,ECC]=$BKP_ECC
+      par2|zfec )
+        EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,FEC]=$BKP_ECC
         eurybox_display_message debug DETECT "Archive description correcting codes search success - found: $BKP_ECC"
         ;;
       * )

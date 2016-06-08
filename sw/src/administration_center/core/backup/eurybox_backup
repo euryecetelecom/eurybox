@@ -54,7 +54,7 @@ case $EURYBOX_BACKUP_TYPE in
     #Create archive file
     euryboxctrl_create_arch
     #Re-Start all VMs
-    euryboxctrl_start_services
+#    euryboxctrl_start_services
     #Create errors correcting codes files
     euryboxctrl_create_eccf
     #Create description file

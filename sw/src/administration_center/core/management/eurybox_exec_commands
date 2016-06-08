@@ -28,7 +28,7 @@ else
   exit 1
 fi
 eurybox_message_display message STATUS "Checking configuration"
-eurybox_check_configuration BACKUP
+eurybox_check_configuration EXEC_COMMAND
 
 #Check input parameters
 eurybox_message_display message STATUS "Checking parameters"
@@ -36,19 +36,18 @@ eurybox_check_arguments $SCRIPT_ARGUMENTS
 
 #Check environment
 eurybox_message_display message STATUS "Checking environment"
-eurybox_check_environment BACKUP
+eurybox_check_environment EXEC_COMMAND
 
-eurybox_message_display message STATUS "$EURYBOX_CORPORATE exec commands script started"
-
+eurybox_message_display message STATUS "$EURYBOX_CORPORATE execute commands script started"
 
 #Start all VMs
 euryboxctrl_start_services
 
-#Execution commands on virtual machines / services
+#Execute commands on virtual machines / services
 euryboxctrl_exec_command_services
 
 #Finished
 END_TIME=$(date +%s)
 DIFF_TIME=$(( $END_TIME - $START_TIME ))
-eurybox_message_display message STATUS "Command exec finished"
-eurybox_message_display message TIMING "Command exec took $DIFF_TIME seconds"
+eurybox_message_display message STATUS "Commands execution finished"
+eurybox_message_display message TIMING "Commands execution took $DIFF_TIME seconds"

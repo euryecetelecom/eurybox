@@ -8,49 +8,24 @@ eurybox_create_archive_desc ()
   local SYNC_OUT
   local STATUS
   local DESCRIPTION
-#TODO: IMPLEMENT PARALLEL EXTRACTION FOR GZ AND BZ2
   case ${EURYBOX_BACKUP_ARCHIVE[FORMAT]} in
-    "tar" ) TAR_OPTIONS="-Stv" ;;
-    "tar.gz" ) TAR_OPTIONS="-Stvz" ;;
-    "tar.bz2" ) TAR_OPTIONS="-Stvj" ;;
+    "tar" ) TAR_OPTIONS="-Stv";;
+    "tar.gz" ) TAR_OPTIONS="-Stv --use-compress-program=pigz";;
+    "tar.bz2" ) TAR_OPTIONS="-Stv --use-compress-program=lbzip2";;
   esac
   STATUS=1234
   DESTINATION=${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.desc
-  DESCRIPTION="ARCHIVE_CONTENT:${EURYBOX_CORPORATE}\nARCHIVE_FILE:${EURYBOX_BACKUP_ARCHIVE[NAME]}\nARCHIVE_FORMAT:${EURYBOX_BACKUP_ARCHIVE[FORMAT]}\nARCHIVE_TARGETS:${EURYBOX_BACKUP_TARGETS[*]}\nARCHIVE_TYPE:${EURYBOX_BACKUP_TYPE}\nARCHIVE_VERSION:${EURYBOX_VERSION}\nECC_FILE:${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[ECC]}\nECC_FORMAT:${EURYBOX_BACKUP_ARCHIVE[ECC]}\nECC_LEVEL:${EURYBOX_BACKUP_ARCHIVE[ECC_LEVEL]\%}\nHASH_FILE:${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[HASH]}\nENCRYPTED_ARCHIVE:${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]}\n"
-#  DESC_OUT=`sudo sh -c "echo ARCHIVE_CONTENT:$EURYBOX_CORPORATE >> $DESTINATION" 2>&1`
-#  DESC_OUT=`sudo sh -c "echo ARCHIVE_FILE:${EURYBOX_BACKUP_ARCHIVE[NAME]} >> $DESTINATION" 2>&1`
-#  DESC_OUT=`sudo sh -c "echo ARCHIVE_FORMAT:${EURYBOX_BACKUP_ARCHIVE[FORMAT]} >> $DESTINATION" 2>&1`
-#  DESC_OUT=`sudo sh -c "echo ARCHIVE_TARGETS:${EURYBOX_BACKUP_TARGETS[*]} >> $DESTINATION" 2>&1`
-#  DESC_OUT=`sudo sh -c "echo ARCHIVE_TYPE:$EURYBOX_BACKUP_TYPE >> $DESTINATION" 2>&1`
-#  DESC_OUT=`sudo sh -c "echo ARCHIVE_VERSION:$EURYBOX_VERSION >> $DESTINATION" 2>&1`
-#  DESC_OUT=`sudo sh -c "echo ECC_FILE:${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[ECC]} >> $DESTINATION" 2>&1`
-#  DESC_OUT=`sudo sh -c "echo ECC_FORMAT:${EURYBOX_BACKUP_ARCHIVE[ECC]} >> $DESTINATION" 2>&1`
-#  DESC_OUT=`sudo sh -c "echo ECC_LEVEL:${EURYBOX_BACKUP_ARCHIVE[ECC_LEVEL]\%} >> $DESTINATION" 2>&1`
-#  DESC_OUT=`sudo sh -c "echo HASH_FILE:${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[HASH]} >> $DESTINATION" 2>&1`
-#  DESC_OUT=`sudo sh -c "echo HASH_FORMAT:${EURYBOX_BACKUP_ARCHIVE[HASH]} >> $DESTINATION" 2>&1`
-#  DESC_OUT=`sudo sh -c "echo ENCRYPTED_ARCHIVE:${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]} >> $DESTINATION" 2>&1`
+  DESCRIPTION="ARCHIVE_CONTENT:${EURYBOX_CORPORATE}\nARCHIVE_FORMAT:${EURYBOX_BACKUP_ARCHIVE[FORMAT]}\nARCHIVE_TARGETS:${EURYBOX_BACKUP_TARGETS[*]}\nARCHIVE_TYPE:${EURYBOX_BACKUP_TYPE}\nARCHIVE_VERSION:${EURYBOX_VERSION}\nFEC_FORMAT:${EURYBOX_BACKUP_ARCHIVE[FEC]}\nHASH_FORMAT:${EURYBOX_BACKUP_ARCHIVE[HASH]}\nENCRYPTED_ARCHIVE:${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]}\n"
   if [[ ${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]} = "true" ]]
   then
     DESCRIPTION+="ENCRYPTION_ALGORITHM:${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]}\nARCHIVE_CONTENT:\n"
     #FIXME: function to read archive with variable archive format required here
     DESCRIPTION+=`sudo sh -c "openssl enc -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -d -in ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]} -k ${EURYBOX_BACKUP_ARCHIVE[PASSWORD]} | tar ${TAR_OPTIONS}"`
-#    DESC_OUT=`sudo sh -c "echo ENCRYPTION_ALGORITHM:${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} >> $DESTINATION" 2>&1`
-#    DESC_OUT=`sudo sh -c "echo ARCHIVE_CONTENT: >> $DESTINATION" 2>&1`
-#    DESC_OUT=$((
-#    (
-#      sudo sh -c "openssl enc -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -d -in ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]} -k ${EURYBOX_BACKUP_ARCHIVE[PASSWORD]} | tar ${TAR_OPTIONS} >> $DESTINATION"
-#          STATUS=$(( ${PIPESTATUS[0]} + ${PIPESTATUS[1]} ))
-#    )) 2>&1)
     STATUS=$?
   else
     DESCRIPTION+="ARCHIVE_CONTENT:\n"
     #FIXME: function to read archive with variable archive format required here
     DESCRIPTION+=`sudo sh -c "tar ${TAR_OPTIONS}f ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]}"`
-#    DESC_OUT=`sudo sh -c "sudo echo ARCHIVE_CONTENT: >> $DESTINATION" 2>&1`
-#    DESC_OUT=$((
-#    (
-#      sudo sh -c "tar ${TAR_OPTIONS}f ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]} >> $DESTINATION"
-#    )) 2>&1)
     STATUS=$?
   fi
   if [[ !($STATUS -eq 0) ]]
@@ -92,10 +67,9 @@ eurybox_create_archive_tar ()
     TAR_OPTIONS="-"
   fi
   case ${EURYBOX_BACKUP_ARCHIVE[FORMAT]} in
-    "tar" ) TAR_OPTIONS="${TAR_OPTIONS}Sc" ;;
-    "tar.gz" ) TAR_OPTIONS="${TAR_OPTIONS}Sc --use-compress-program=pigz" ;;
-    "tar.bz2" ) TAR_OPTIONS="${TAR_OPTIONS}Sc --use-compress-program=pbzip2 " ;;
-    #xz
+    "tar" ) TAR_OPTIONS="${TAR_OPTIONS}Sc";;
+    "tar.gz" ) TAR_OPTIONS="${TAR_OPTIONS}Sc --use-compress-program=pigz";;
+    "tar.bz2" ) TAR_OPTIONS="${TAR_OPTIONS}Sc --use-compress-program=pbzip2";;
   esac
   if [[ ${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]} = "true" ]]
   then
@@ -127,49 +101,61 @@ eurybox_create_archive_tar ()
   fi
 }
 
+#FIXME: par2 has issues with curlftpfs - flush failed (ftpfs: operation ftpfs_write failed because Input/output error)
 #FIXME: extract function parameters to transfer to control section use and make functions more generic and reusable
-eurybox_create_archive_par ()
+eurybox_create_archive_fec ()
 {
-  local PAR_OUT
+  local FEC_OUT
   local SYNC_OUT
   local STATUS
+  local FEC_LEVEL="${EURYBOX_BACKUP_ARCHIVE[FEC_LEVEL]}"
+  local FEC_TYPE="${EURYBOX_BACKUP_ARCHIVE[FEC]}"
+  local FEC_FILE_NUM="${EURYBOX_BACKUP_ARCHIVE[FEC_FILE_NUM]}"
+  local FEC_FILE_NUM_MIN="${EURYBOX_BACKUP_ARCHIVE[FEC_FILE_NUM_MIN]}"
+  local FEC_TARGET="${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]}"
+  local FEC_DESTINATION="${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FEC]}"
   case $EURYBOX_LOG_LEVEL in
-    debug|verbose ) PAR_OPTIONS="-v -v";;
-    message ) PAR_OPTIONS="-v";;
-    warning ) PAR_OPTIONS="-q";;
-    error ) PAR_OPTIONS="-q -q";;
+    debug|verbose ) FEC_OPTIONS="-v";;
+    message ) FEC_OPTIONS="";;
+    warning ) FEC_OPTIONS="";;
+    error ) FEC_OPTIONS="-q";;
   esac
-  case "${EURYBOX_BACKUP_ARCHIVE[ECC]}" in
-    "par2" )
-      PAR_OUT=`sudo sh -c "par2 c $PAR_OPTIONS -r${EURYBOX_BACKUP_ARCHIVE[ECC_LEVEL]} -t+ ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[ECC]} ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]}" 2>&1`
+  case "$FEC_TYPE" in
+    par2 )
+      FEC_OUT=`sudo sh -c "par2 c $FEC_OPTIONS -r${FEC_LEVEL} -n${FEC_FILE_NUM} -u -t+ ${FEC_DESTINATION} ${FEC_TARGET}" 2>&1`
+      STATUS=$?
+    ;;
+    zfec )
+      FEC_OUT=`sudo sh -c "zfec $FEC_OPTIONS -m ${FEC_FILE_NUM} -k ${FEC_FILE_NUM_MIN} ${FEC_TARGET}" 2>&1`
       STATUS=$?
     ;;
     * )
-      eurybox_display_message error CREATE "Archive ecc format unknown: ${EURYBOX_BACKUP_ARCHIVE[HASH]}"
+      eurybox_display_message error CREATE "Archive FEC format unknown: ${EURYBOX_BACKUP_ARCHIVE[FEC]}"
     ;;
   esac
   if [[ !($STATUS -eq 0) ]]
   then
-    eurybox_display_message warning ARCHIVE "Archive ecc creation failed - error $STATUS:\n$PAR_OUT"
+    eurybox_display_message warning ARCHIVE "Archive FEC creation failed - error $STATUS:\n$FEC_OUT"
   else
-    eurybox_display_message message CREATE "Archive ecc creation - OK"
-    eurybox_display_message debug CREATE "Ecc command output:\n$PAR_OUT"
+    eurybox_display_message message CREATE "Archive FEC creation - OK"
+    eurybox_display_message debug CREATE "FEC command output:\n$FEC_OUT"
     SYNC_OUT=`sudo sync 2>&1`
     STATUS=$?
     if [[ !($STATUS -eq 0) ]]
     then
-      eurybox_display_message warning CREATE "Archive description FS sync failed - error $STATUS:\n$SYNC_OUT"
+      eurybox_display_message warning CREATE "Archive FEC FS sync failed - error $STATUS:\n$SYNC_OUT"
     else
-      eurybox_display_message message CREATE "Archive description FS sync - OK"
+      eurybox_display_message message CREATE "Archive FEC FS sync - OK"
       eurybox_display_message debug CREATE "Sync command output:\n$SYNC_OUT"
     fi
   fi
 }
 
+
 #FIXME: extract function parameters to transfer to control section use and make functions more generic and reusable
-eurybox_create_archive_sha ()
+eurybox_create_archive_hash ()
 {
-  local SHA_OUT
+  local HASH_OUT
   local SYNC_OUT
   local STATUS
   case $EURYBOX_LOG_LEVEL in
@@ -180,11 +166,11 @@ eurybox_create_archive_sha ()
   esac
   case "${EURYBOX_BACKUP_ARCHIVE[HASH]}" in
     "sha256" )
-      SHA_OUT=`sudo sh -c "sha256sum $SHA_OPTIONS ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}* > ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[HASH]}" 2>&1`
+      HASH_OUT=`sudo sh -c "sha256sum $SHA_OPTIONS ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}* > ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[HASH]}" 2>&1`
       STATUS=$?
     ;;
     "sha512" )
-      SHA_OUT=`sudo sh -c "sha512sum $SHA_OPTIONS ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}* > ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[HASH]}" 2>&1`
+      HASH_OUT=`sudo sh -c "sha512sum $SHA_OPTIONS ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}* > ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[HASH]}" 2>&1`
       STATUS=$?
     ;;
     * )
@@ -193,17 +179,17 @@ eurybox_create_archive_sha ()
   esac
   if [[ !($STATUS -eq 0) ]]
   then
-    eurybox_display_message warning CREATE "Archive hash creation failed - error $STATUS:\n$SHA_OUT"
+    eurybox_display_message warning CREATE "Archive hash creation failed - error $STATUS:\n$HASH_OUT"
   else
     eurybox_display_message message CREATE "Archive hash creation - OK"
-    eurybox_display_message debug CREATE "Hash command output:\n$SHA_OUT"
+    eurybox_display_message debug CREATE "Hash command output:\n$HASH_OUT"
     SYNC_OUT=`sudo sync 2>&1`
     STATUS=$?
     if [[ !($STATUS -eq 0) ]]
     then
-      eurybox_display_message warning CREATE "Archive description FS sync failed - error $STATUS:\n$SYNC_OUT"
+      eurybox_display_message warning CREATE "Archive hash FS sync failed - error $STATUS:\n$SYNC_OUT"
     else
-      eurybox_display_message message CREATE "Archive description FS sync - OK"
+      eurybox_display_message message CREATE "Archive hash FS sync - OK"
       eurybox_display_message debug CREATE "Sync command output:\n$SYNC_OUT"
     fi
   fi
