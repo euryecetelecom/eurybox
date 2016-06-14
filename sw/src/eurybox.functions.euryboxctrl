@@ -50,6 +50,12 @@ euryboxctrl_check_hash ()
   eurybox_check_hash
 }
 
+euryboxctrl_check_restore_vm ()
+{
+  eurybox_display_message message EURYBOXCTRL "Checking restore VMs"
+  eurybox_check_restore_vm
+}
+
 euryboxctrl_check_sign ()
 {
   eurybox_display_message warning EURYBOXCTRL "Checking the signature file - NOT IMPLEMENTED YET / ALWAYS OK RETURNED"
@@ -61,9 +67,6 @@ euryboxctrl_create_arch ()
   #Create the archive
   eurybox_display_message message EURYBOXCTRL "Creating the archive file"
   eurybox_create_archive_tar
-
-  #Flush temporary directory
-  eurybox_flush_directory $EURYBOX_BACKUP_TMP_FOLDER
 }
 
 euryboxctrl_create_desc ()
@@ -100,11 +103,13 @@ euryboxctrl_discover_available_archives ()
   eurybox_display_message message EURYBOXCTRL "Mounting backup origin"
   eurybox_backup_mount_target
 
+  eurybox_display_message message EURYBOXCTRL "Detecting available archives"
   eurybox_detect_archives ${EURYBOX_BACKUP_DESTINATION[MOUNT]}
   for (( ARCH_NUM=0;ARCH_NUM<${EURYBOX_DETECTED_ARCHIVES[NUM]};ARCH_NUM++ ))
   do
     LNAME=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,FILE]}
-    eurybox_detect_archive_content "${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${LNAME}"
+    eurybox_display_message message EURYBOXCTRL "Detecting archive content for ${LNAME}"
+    eurybox_detect_archive_content "$ARCH_NUM"
   done
 
   #unmount backup target
@@ -136,6 +141,9 @@ euryboxctrl_prepare_backup ()
 {
   EURYBOX_BACKUP_ARCHIVE[NAME]=${EURYBOX_BACKUP_ARCHIVE[NAME]}_$(date +"%Y_%m_%d_%H_%M_%S")
   
+  #Flush temporary directory
+  eurybox_flush_directory $EURYBOX_TMP_FOLDER
+  
   #Detect environment
   eurybox_display_message message EURYBOXCTRL "Detecting environment"
   eurybox_detect_libvirt_env
@@ -162,67 +170,113 @@ euryboxctrl_prepare_backup ()
 
 euryboxctrl_prepare_restore ()
 {
+  #Flush temporary directory
+  eurybox_flush_directory $EURYBOX_TMP_FOLDER
+
   #Mount backup target
   eurybox_display_message message EURYBOXCTRL "Mounting backup origin"
   eurybox_backup_mount_target
 
-  #Check archive and associated files integrity
-  euryboxctrl_check_hash
+  case $EURYBOX_RESTORE_MODE in
+   safe )
 
-  if [[ ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},HASH_STATUS]} = "KO" ]]
-  then
-    eurybox_display_message message EURYBOXCTRL "Trying to repair archive with FEC data"
-    euryboxctrl_check_eccf
-    if [[ ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},ECC_STATUS]} = "KO" ]]
+    #Check archive and associated files integrity
+    euryboxctrl_check_hash
+
+    if [[ ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},HASH_STATUS]} = "KO" ]]
     then
-      #Un-mount backup target
-      eurybox_display_message message EURYBOXCTRL "Unmounting backup origin"
-      eurybox_backup_umount_target
-      eurybox_display_message error EURYBOXCTRL "FEC reparation of archive failed - restoration cannot continue"
-    else
-      euryboxctrl_check_hash
-      if [[ ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},HASH_STATUS]} = "KO" ]]
-      then
-        eurybox_display_message message EURYBOXCTRL "Unmounting backup origin"
-        eurybox_backup_umount_target
-        eurybox_display_message error EURYBOXCTRL "FEC reparation of archive success but hash still mismatch - restoration cannot continue"
-      else
-        eurybox_display_message message EURYBOXCTRL "Unmounting backup origin"
-        eurybox_backup_umount_target
-        eurybox_display_message error EURYBOXCTRL "Selected archive was corrupted - FEC reparation of archive has been successfull and hash verification success - restoration can be tried again"
-      fi
-    fi
-  else
-    euryboxctrl_check_sign
-    if [[ ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},SIGN_STATUS]} = "KO" ]]
-    then
-      #Un-mount backup target
-      eurybox_display_message message EURYBOXCTRL "Unmounting backup origin"
-      eurybox_backup_umount_target
-      eurybox_display_message error EURYBOXCTRL "Signature verification of archive failed - restoration cannot continue"
-    else
-      euryboxctrl_check_arch
-      if [[ ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},ARCH_STATUS]} = "KO" ]]
+      eurybox_display_message message EURYBOXCTRL "Trying to repair archive with FEC data"
+      euryboxctrl_check_eccf
+      if [[ ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},ECC_STATUS]} = "KO" ]]
       then
         #Un-mount backup target
         eurybox_display_message message EURYBOXCTRL "Unmounting backup origin"
         eurybox_backup_umount_target
-        eurybox_display_message error EURYBOXCTRL "Hash and signature OK but archive check failed - restoration cannot continue"
+        eurybox_display_message error EURYBOXCTRL "FEC reparation of archive failed - restoration cannot continue"
       else
-        eurybox_display_message message EURYBOXCTRL "Archive origin checks are OK - restoration can continue"
+        euryboxctrl_check_hash
+        if [[ ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},HASH_STATUS]} = "KO" ]]
+        then
+          eurybox_display_message message EURYBOXCTRL "Unmounting backup origin"
+          eurybox_backup_umount_target
+          eurybox_display_message error EURYBOXCTRL "FEC reparation of archive success but hash still mismatch - restoration cannot continue"
+        else
+          eurybox_display_message message EURYBOXCTRL "Unmounting backup origin"
+          eurybox_backup_umount_target
+          eurybox_display_message error EURYBOXCTRL "Selected archive was corrupted - FEC reparation of archive has been successfull and hash verification success - restoration can be tried again"
+        fi
+      fi
+    else
+      euryboxctrl_check_sign
+      if [[ ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},SIGN_STATUS]} = "KO" ]]
+      then
+        #Un-mount backup target
+        eurybox_display_message message EURYBOXCTRL "Unmounting backup origin"
+        eurybox_backup_umount_target
+        eurybox_display_message error EURYBOXCTRL "Signature verification of archive failed - restoration cannot continue"
+      else
+        euryboxctrl_check_arch
+        if [[ ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},ARCH_STATUS]} = "KO" ]]
+        then
+          #Un-mount backup target
+          eurybox_display_message message EURYBOXCTRL "Unmounting backup origin"
+          eurybox_backup_umount_target
+          eurybox_display_message error EURYBOXCTRL "Hash and signature OK but archive check failed - restoration cannot continue"
+        else
+          eurybox_display_message message EURYBOXCTRL "Archive origin checks are OK - restoration can continue"
+          eurybox_display_detected_archive_vms ${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]}
+        fi
       fi
     fi
-  fi
+   ;;
+   fast )
+     eurybox_display_message message EURYBOXCTRL "Fast mode activated - skipping important checks before restoring - be sure when using this mode you know what you are doing"
+   ;;
+   * )
+     eurybox_backup_umount_target
+     eurybox_display_message error EURYBOXCTRL "Bad configuration parameter detected: $EURYBOX_RESTORE_MODE"
+   ;;
+  esac
+}
+
+euryboxctrl_restore_vm ()
+{
+  eurybox_display_message message EURYBOXCTRL "Starting VM(s) restoration"
+  eurybox_restore_vm
 }
 
 euryboxctrl_select_restore_target ()
 {
-  if [[ $EURYBOX_RESTORE_TARGET_ACQUISITION = "interactive" ]]
+  if [[ $EURYBOX_RESTORE_PARAMETERS_ACQUISITION = "interactive" ]]
   then
     eurybox_configure_interactive_restoration_target
   else
     eurybox_display_message warning EURYBOXCTRL "Unknown restoration target acquisition type: $EURYBOX_RESTORE_TARGET_ACQUISITION"
   fi
+}
+
+euryboxctrl_select_restore_vm ()
+{
+  if [[ $EURYBOX_RESTORE_PARAMETERS_ACQUISITION = "interactive" ]]
+  then
+    eurybox_configure_interactive_restoration_vm
+  else
+    eurybox_display_message warning EURYBOXCTRL "Unknown restoration target acquisition type: $EURYBOX_RESTORE_TARGET_ACQUISITION"
+  fi
+}
+
+euryboxctrl_shutdown_live_services_ssh ()
+{
+  for ((EURYBOX_SERVICES_NUM=EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM>=1;EURYBOX_SERVICES_NUM--));
+  do
+    if [[ ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,LIVE]} == "true" ]]
+    then
+      eurybox_display_message message EURYBOXCTRL "Shutting-Down live domain via ssh ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]}"
+      eurybox_vm_shutdown_ssh ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,USER]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,PORT]}
+    else
+      eurybox_display_message message EURYBOXCTRL "Skipping shutting-down non-live domain: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}"
+    fi
+  done
 }
 
 euryboxctrl_shutdown_services_ssh ()
@@ -250,6 +304,20 @@ euryboxctrl_start_services ()
   do
     eurybox_display_message message EURYBOXCTRL "Starting ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}"
     eurybox_vm_start ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,USER]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,PORT]}
+  done
+}
+
+euryboxctrl_start_live_services ()
+{
+  for (( EURYBOX_SERVICES_NUM=1;EURYBOX_SERVICES_NUM<=EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM++ ))
+  do
+    if [[ ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,LIVE]} == "true" ]]
+    then
+      eurybox_display_message message EURYBOXCTRL "Starting live domain: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}"
+      eurybox_vm_start ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,USER]} ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,PORT]}
+    else
+      eurybox_display_message message EURYBOXCTRL "Skipping starting non-live domain: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}"
+    fi
   done
 }
 
@@ -284,6 +352,9 @@ euryboxctrl_terminate_backup ()
   #Unmount backup target
   eurybox_display_message message EURYBOXCTRL "Unmounting backup destination"
   eurybox_backup_umount_target
+  
+  #Flush temporary directory
+  eurybox_flush_directory $EURYBOX_TMP_FOLDER
 }
 
 euryboxctrl_terminate_restore ()
@@ -291,5 +362,8 @@ euryboxctrl_terminate_restore ()
   #Unmount backup target
   eurybox_display_message message EURYBOXCTRL "Unmounting backup destination"
   eurybox_backup_umount_target
+
+  #Flush temporary directory
+  eurybox_flush_directory $EURYBOX_TMP_FOLDER
 }
 

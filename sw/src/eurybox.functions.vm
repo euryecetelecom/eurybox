@@ -1,6 +1,101 @@
 #!/bin/bash
 #EuryBOX vm functions file
 
+#Desc: rename a VM through libvirt
+#1 arg required: vm_name
+eurybox_vm_rename ()
+{
+  local NAME=$1
+  local STATUS
+  local DISKS
+  local DISKS_NUM
+  local NOW=$(date +"%Y_%m_%d@%H_%M_%S")
+  local TMP_DESC="${EURYBOX_TMP_FOLDER}/${NAME}_${NOW}"
+  local RENAME_OUT=`sudo virsh $EURYBOX_VIRSH_OPTIONS list --all | awk '{ if ($2 == name) {print $2} }' name=$NAME 2>&1`
+  STATUS=$?
+  if [[ $STATUS -eq 0 ]]
+  then
+    if [[ $RENAME_OUT == "" ]]
+    then
+      eurybox_display_message warning VM "Rename not possible on non-present vm: $NAME"
+    else
+      RENAME_OUT=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | awk '{ if ($2 == name) {print $2} }' name=$NAME  2>&1`
+      if [[ !($RENAME_OUT == "") ]]
+      then
+        eurybox_display_message warning VM "Forcing stop of running vm: $NAME"
+        RENAME_OUT=`sudo sh -c "virsh $EURYBOX_VIRSH_OPTIONS destroy $NAME" 2>&1`
+      fi
+      eurybox_export_vm_config $NAME $TMP_DESC
+      DISKS=( $(sudo virsh $EURYBOX_VIRSH_OPTIONS domblklist $NAME | awk '($2 != "-") {print $2}') )
+      STATUS=$?
+      if [[ !($STATUS -eq 0) ]]
+      then
+        eurybox_display_message error VM "Error on VM description dump: $NAME - error: $STATUS:\n$DISKS"
+      else
+        if [[ !($DISKS = "") ]]
+        then
+          DISKS_NUM=${#DISKS[@]}
+          eurybox_display_message message VM "VM $NAME - $DISKS_NUM disk(s) found"
+          for (( DISK_NUM=0;DISK_NUM<$DISKS_NUM;DISK_NUM++ ))
+          do
+            RENAME_OUT=`sudo mv ${DISKS[DISK_NUM]} ${DISKS[DISK_NUM]}_${NOW} 2>&1`
+            STATUS=$?
+            if [[ !($STATUS -eq 0) ]]
+            then
+              eurybox_display_message error VM "Error on VM disk rename: $NAME - ${DISKS[DISK_NUM]} - error $STATUS:\n$RENAME_OUT"
+            else
+              eurybox_display_message debug VM "VM $NAME - disk renamed: ${DISKS[DISK_NUM]} -> ${DISKS[DISK_NUM]}_${NOW}"
+              RENAME_OUT=`sudo cat $TMP_DESC | awk '{ if($NF == "file=" sq disk_name sq "/>") { for(i=1; i<(NF); i++) { if(i==1) { disk=$i } else { disk=disk" "$i } } ; disk=disk" file=" sq disk_new_name sq "/>" ; print disk } else { print $0 } }' disk_name=${DISKS[DISK_NUM]} disk_new_name=${DISKS[DISK_NUM]}_${NOW} sq=\' 2>&1`
+              STATUS=$?
+              if [[ !($STATUS -eq 0) ]]
+              then
+                eurybox_display_message error VM "Error on VM disk description update: $NAME - ${DISKS[DISK_NUM]} - error $STATUS:\n$RENAME_OUT"
+              else
+                sudo sh -c "echo \"$RENAME_OUT\" > $TMP_DESC"
+                eurybox_display_message debug VM "VM $NAME - disk description renamed: ${DISKS[DISK_NUM]} -> ${DISKS[DISK_NUM]}_${NOW}"
+              fi
+            fi
+          done
+        else
+          eurybox_display_message warning VM "No domain disk detected for VM $NAME"
+        fi
+      fi
+      RENAME_OUT=`sudo sh -c "cat $TMP_DESC | awk '{ if (\\\$NF == \"<name>\"name\"</name>\") {print \"<name>\"new_name\"</name>\"} else { if (\\\$0 !~ /<uuid>/) {print \\\$0} } }' name=$NAME new_name=${NAME}_${NOW}" 2>&1`
+      STATUS=$?
+      if [[ !($STATUS -eq 0) ]]
+      then
+        eurybox_display_message error VM "Error on VM domain name description updated: $NAME - error $STATUS:\n$RENAME_OUT"
+      else
+        RENAME_OUT=`sudo sh -c "echo \"$RENAME_OUT\" > $TMP_DESC" 2>&1`
+        STATUS=$?
+        if [[ !($STATUS -eq 0) ]]
+        then
+          eurybox_display_message error RENAME "VM $NAME - domain name description update failed - error $STATUS:\n$RENAME_OUT"        
+        else
+          eurybox_display_message debug RENAME "VM $NAME - domain name description updated: $NAME -> ${NAME}_${NOW}"
+        fi
+        RENAME_OUT=`sudo virsh $EURYBOX_VIRSH_OPTIONS undefine $NAME 2>&1`
+        STATUS=$?
+        if [[ !($STATUS -eq 0) ]]
+        then
+          eurybox_display_message error VM "Error on VM domain name undefine: $NAME - error $STATUS:\n$RENAME_OUT"
+        else
+          RENAME_OUT=`sudo virsh $EURYBOX_VIRSH_OPTIONS define $TMP_DESC 2>&1`
+          STATUS=$?
+          if [[ !($STATUS -eq 0) ]]
+          then
+            eurybox_display_message error VM "Error on VM domain name define: $TMP_DESC - error $STATUS:\n$RENAME_OUT"
+          else
+            eurybox_display_message message VM "VM renamed $NAME -> ${NAME}_${NOW}"
+          fi
+        fi
+      fi
+    fi
+  else
+    eurybox_display_message error VM "Virsh call issue - error $STATUS:\$RENAME_OUT"
+  fi
+}
+
 #Desc: shutdown a VM through libvirt ACPI emulation (doesn't work for OS without ACPI support)
 #1 arg required: vm_name
 eurybox_vm_shutdown_acpi ()
@@ -14,8 +109,8 @@ eurybox_vm_shutdown_acpi ()
   local NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
   while [[ ( $EURYBOX_VM_STATE -eq 1 ) && !( $NB_TRY_LEFT -eq 0 ) ]]
   do
-   EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | grep $NAME`
-   if [ -z "$EURYBOX_VM_NAME" ]
+   EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | awk '{ if ($2 == name) {print $2} }' name=$NAME  2>&1`
+   if [[ -z "$EURYBOX_VM_NAME" ]]
    then
      EURYBOX_VM_STATE=0
    else
@@ -63,8 +158,8 @@ eurybox_vm_shutdown_ssh ()
   local NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
   while [[ ( $EURYBOX_VM_STATE -eq 1 ) && !( $NB_TRY_LEFT -eq 0 ) ]]
   do
-    EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | grep $NAME`
-    if [ -z "$EURYBOX_VM_NAME" ]
+    EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | awk '{ if ($2 == name) {print $2} }' name=$NAME  2>&1`
+    if [[ -z "$EURYBOX_VM_NAME" ]]
     then
       EURYBOX_VM_STATE=0
     else
@@ -126,7 +221,7 @@ eurybox_vm_start ()
         STATUS=$?
         if [[ !($STATUS -eq 0) ]]
         then
-          VM_OUT=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | grep $NAME`
+          VM_OUT=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | awk '{ if ($2 == name) {print $2} }' name=$NAME 2>&1`
           if [[ -z "$VM_OUT" ]]
           then
             eurybox_display_message warning VM "Error on vm $NAME start - trying again in 5 seconds:\n$VIRSH_OUT\n$NB_TRY_LEFT left"

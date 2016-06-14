@@ -8,19 +8,53 @@ eurybox_configure_interactive_restoration_target ()
   echo "Enter archive ID target for restoration:"
   read USER_INPUT
   LREGEX='^[0-9].+?$'
-  while ! [[ $USER_INPUT =~ $LREGEX ]]; do
-    eurybox_display_message warning CONFIGURE "Please enter an integer number (exs: 0 / 2 / 25)"
+  while ( !( [[ $USER_INPUT =~ $LREGEX ]]) || (( $USER_INPUT >= ${EURYBOX_DETECTED_ARCHIVES[NUM]} )) )
+  do
+  #&& (( $USER_INPUT >= ${EURYBOX_DETECTED_ARCHIVES[NUM]} )) ) ; do
+    eurybox_display_message warning CONFIGURE "Please enter an integer number (exs: 0 / 2 / 25) lower than ${EURYBOX_DETECTED_ARCHIVES[NUM]}"
     eurybox_display_message debug CONFIGURE "Received input: $USER_INPUT"
     read USER_INPUT
   done
   EURYBOX_RESTORE_TARGET_ARCHIVE[ID]=$USER_INPUT
-  if (( ${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]} >= ${EURYBOX_DETECTED_ARCHIVES[NUM]} ))
-  then
-    eurybox_display_message error CONFIGURE  "Selected archive unavailable: ${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]}"
-  else
-    EURYBOX_BACKUP_ARCHIVE[NAME]="${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},VERSION]}"
-    eurybox_display_message message CONFIGURE "Selected archive: ${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]} / ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},FILENAME]}"
-  fi
+  EURYBOX_BACKUP_ARCHIVE[NAME]="${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},VERSION]}"
+  eurybox_display_message message CONFIGURE "Selected archive: ${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]} / ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},FILENAME]}"
 }
 
+#Desc: specify the restoration vm through interactive input by user
+#No arg required
+eurybox_configure_interactive_restoration_vm ()
+{
+  local INPUT_OK="false"
+  local USER_INPUT
+  echo "Enter VM ID target for restoration (* for all VMs):"
+  local LREGEX='^[0-9*].+?$'
+  while [[ $INPUT_OK == "false" ]]
+  do
+    read USER_INPUT
+    if [[ $USER_INPUT =~ $LREGEX ]]
+    then
+      if [[ $USER_INPUT == "*" ]]
+      then
+        INPUT_OK="true"
+      else
+        if (( $USER_INPUT < ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},VM_NUM]} ))
+        then
+          INPUT_OK="true"
+        fi
+      fi
+    fi
+    if [[ $INPUT_OK == "false" ]]
+    then
+      eurybox_display_message warning CONFIGURE "Please enter an integer number (exs: 0 / 2 / 25) lower than ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},VM_NUM]} or *"
+      eurybox_display_message debug CONFIGURE "Received input: $USER_INPUT"
+    fi
+  done
+  EURYBOX_RESTORE_TARGET_ARCHIVE[VM_ID]=$USER_INPUT
+  if [[ !(${EURYBOX_RESTORE_TARGET_ARCHIVE[VM_ID]} == "*") ]]
+  then
+    eurybox_display_message message CONFIGURE "Selected target - VM: ${EURYBOX_RESTORE_TARGET_ARCHIVE[VM_ID]} / ${EURYBOX_DETECTED_ARCHIVES[${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]},${EURYBOX_RESTORE_TARGET_ARCHIVE[VM_ID]},NAME]}"
+  else
+    eurybox_display_message message CONFIGURE "Selected target - restore all VMs"
+  fi
+}
 

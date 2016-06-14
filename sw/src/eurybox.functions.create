@@ -11,11 +11,11 @@ eurybox_create_archive_desc ()
   case ${EURYBOX_BACKUP_ARCHIVE[FORMAT]} in
     "tar" ) TAR_OPTIONS="-Stv";;
     "tar.gz" ) TAR_OPTIONS="-Stv --use-compress-program=pigz";;
-    "tar.bz2" ) TAR_OPTIONS="-Stv --use-compress-program=lbzip2";;
+    "tar.bz2" ) TAR_OPTIONS="-Stv --use-compress-program=pbzip2";;
   esac
   STATUS=1234
   DESTINATION=${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.desc
-  DESCRIPTION="ARCHIVE_CONTENT:${EURYBOX_CORPORATE}\nARCHIVE_FORMAT:${EURYBOX_BACKUP_ARCHIVE[FORMAT]}\nARCHIVE_TARGETS:${EURYBOX_BACKUP_TARGETS[*]}\nARCHIVE_TYPE:${EURYBOX_BACKUP_TYPE}\nARCHIVE_VERSION:${EURYBOX_VERSION}\nFEC_FORMAT:${EURYBOX_BACKUP_ARCHIVE[FEC]}\nHASH_FORMAT:${EURYBOX_BACKUP_ARCHIVE[HASH]}\nENCRYPTED_ARCHIVE:${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]}\n"
+  DESCRIPTION="ARCHIVE_CORPORATE:${EURYBOX_CORPORATE}\nARCHIVE_FORMAT:${EURYBOX_BACKUP_ARCHIVE[FORMAT]}\nARCHIVE_TARGETS:${EURYBOX_BACKUP_TARGETS[*]}\nARCHIVE_TYPE:${EURYBOX_BACKUP_TYPE}\nARCHIVE_VERSION:${EURYBOX_VERSION}\nFEC_FORMAT:${EURYBOX_BACKUP_ARCHIVE[FEC]}\nHASH_FORMAT:${EURYBOX_BACKUP_ARCHIVE[HASH]}\nENCRYPTED_ARCHIVE:${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]}\n"
   if [[ ${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]} = "true" ]]
   then
     DESCRIPTION+="ENCRYPTION_ALGORITHM:${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]}\nARCHIVE_CONTENT:\n"
@@ -25,7 +25,7 @@ eurybox_create_archive_desc ()
   else
     DESCRIPTION+="ARCHIVE_CONTENT:\n"
     #FIXME: function to read archive with variable archive format required here
-    DESCRIPTION+=`sudo sh -c "tar ${TAR_OPTIONS}f ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]}" 2>&1`
+    DESCRIPTION+=`sudo sh -c "tar ${TAR_OPTIONS} -f ${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_BACKUP_ARCHIVE[NAME]}.${EURYBOX_BACKUP_ARCHIVE[FORMAT]}" 2>&1`
     STATUS=$?
   fi
   if [[ !($STATUS -eq 0) ]]
@@ -93,9 +93,9 @@ eurybox_create_archive_tar ()
     STATUS=$?
     if [[ !($STATUS -eq 0) ]]
     then
-      eurybox_display_message warning CREATE "Archive description FS sync failed - error: $STATUS:\n$SYNC_OUT"
+      eurybox_display_message warning CREATE "Archive creation FS sync failed - error: $STATUS:\n$SYNC_OUT"
     else
-      eurybox_display_message message CREATE "Archive description FS sync - OK"
+      eurybox_display_message message CREATE "Archive creation FS sync - OK"
       eurybox_display_message debug CREATE "Sync command output:\n$SYNC_OUT"
     fi
   fi

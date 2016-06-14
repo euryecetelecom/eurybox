@@ -57,19 +57,27 @@ case $EURYBOX_RESTORE_TYPE in
 ########################
 # CLONE VM RESTORATION #
 ########################
-    eurybox_display_message warning STATUS "CLONE VM RESTORE NOT AVAILABLE YET"
+    eurybox_display_message message STATUS "VM clone restore started"
+    #Select VM to be restored
+    euryboxctrl_select_restore_vm
+
+    #Check VM to be restored
+    euryboxctrl_check_restore_vm
+
+    #Restore VM
+    euryboxctrl_restore_vm
   ;;
   cloned_full )
 #####################################
 # CLONE VM + HYPERVISOR RESTORATION #
 #####################################
-    eurybox_display_message warning STATUS "CLONE VM + HV RESTORE NOT AVAILABLE YET"
+    eurybox_display_message warning STATUS "CLONE VM + HV RESTORE NOT AVAILABLE YET - PLEASE PREPARE ENVIRONMENT MANUALLY"
   ;;
   full )
 ########################################
 # FULL SYSTEM RESTORATION + VM REFRESH #
 ########################################
-    eurybox_display_message warning STATUS "FULL RESTORE NOT AVAILABLE YET"
+    eurybox_display_message warning STATUS "FULL RESTORE NOT AVAILABLE YET - PLEASE PREPARE ENVIRONMENT MANUALLY"
   ;;
   * )
     eurybox_display_message warning STATUS "Unknown restoration type: $EURYBOX_RESTORE_TYPE"

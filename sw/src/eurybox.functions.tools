@@ -10,6 +10,7 @@ eurybox_change_file_permissions ()
   local DAC_MASK=$3
   local MAC_MASK=$4
   local PERMISSIONS_OUT
+  local LS_OPTIONS="-al"
   PERMISSIONS_OUT=`sudo sh -c "sudo chmod -R $DAC_MASK $FILE" 2>&1`
   STATUS=$?
   if [[ !($STATUS -eq 0) ]]
@@ -28,16 +29,20 @@ eurybox_change_file_permissions ()
     eurybox_display_message message TOOLS "DAC owner changed with success"
     eurybox_display_message debug TOOLS "DAC owner output command:\n$PERMISSIONS_OUT"
   fi
-  PERMISSIONS_OUT=`sudo sh -c "sudo chcon -R $MAC_MASK $FILE" 2>&1`
-  STATUS=$?
-  if [[ !($STATUS -eq 0) ]]
+  if [[ $EURYBOX_DISTRIB_MAC_TYPE == "selinux" ]]
   then
-    eurybox_display_message warning TOOLS "MAC label change failed - error $STATUS:\n$PERMISSIONS_OUT"
-  else
-    eurybox_display_message message TOOLS "MAC label changed with success"
-    eurybox_display_message debug TOOLS "MAC label output command:\n$PERMISSIONS_OUT"
+    LS_OPTIONS="-aZ"
+    PERMISSIONS_OUT=`sudo sh -c "sudo chcon -R $MAC_MASK $FILE" 2>&1`
+    STATUS=$?
+    if [[ !($STATUS -eq 0) ]]
+    then
+      eurybox_display_message warning TOOLS "MAC label change failed - error $STATUS:\n$PERMISSIONS_OUT"
+    else
+      eurybox_display_message message TOOLS "MAC label changed with success"
+      eurybox_display_message debug TOOLS "MAC label output command:\n$PERMISSIONS_OUT"
+    fi
   fi
-  PERMISSIONS_OUT=`sudo sh -c "ls -aZ $FILE" 2>&1`
+  PERMISSIONS_OUT=`sudo sh -c "ls $LS_OPTIONS $FILE" 2>&1`
   STATUS=$?
   if [[ !($STATUS -eq 0) ]]
   then
@@ -221,6 +226,43 @@ eurybox_display_detected_archives ()
   done
 }
 
+#Desc: echo detected vms from archive
+#1 arg required: archive_id
+eurybox_display_detected_archive_vms ()
+{
+  local ARCH_NUM=$1
+  local VM_DESC
+  local VM_NUM=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,VM_NUM]}
+  local NAME=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,NAME]}
+  local TIME=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TIME]}
+  local ENC=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,ENC]}
+  local COMP=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,COMP]}
+  local TYPE=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TYPE]}
+  local VERS=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,VERS]}
+  local FEC=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,FEC]}
+  local HASH=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,HASH]}
+  local YEAR=`echo ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TIME]} | awk -F"_" '{ print $1 }'`
+  local MONTH=`echo ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TIME]} | awk -F"_" '{ print $2 }'`
+  local DAY=`echo ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TIME]} | awk -F"_" '{ print $3 }'`
+  local HOUR=`echo ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TIME]} | awk -F"_" '{ print $4 }'`
+  local MINUTE=`echo ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TIME]} | awk -F"_" '{ print $5 }'`
+  local SECOND=`echo ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,TIME]} | awk -F"_" '{ print $6 }'`
+
+  echo "------------ [[ ARCHIVE: $NAME ]] ------------"
+  echo "Date: $YEAR/$MONTH/$DAY @ $HOUR:$MINUTE:$SECOND"
+  echo "Encrypted: $ENC"
+  echo "Compression: $COMP"
+  echo "FEC: $FEC"
+  echo "Version: $VERS"
+  echo "Hash: $HASH"
+  echo "VMs: $VM_NUM"
+  for (( VM_NUM=0;VM_NUM<${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,VM_NUM]};VM_NUM++ ))
+  do
+    NAME=${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,$VM_NUM,NAME]}
+    echo "ID: $VM_NUM => VM: $NAME"
+  done
+}
+
 #Desc: execute a command through ssh
 #4 args required: host port user command
 eurybox_exec_ssh_command ()
@@ -274,4 +316,3 @@ eurybox_flush_directory ()
     eurybox_display_message warning TOOLS "Forbidden directory flush attempt: $T_PATH is not removable"
   fi
 }
-

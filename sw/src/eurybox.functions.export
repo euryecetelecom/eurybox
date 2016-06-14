@@ -8,7 +8,7 @@ eurybox_export_hv_config ()
   #Dumping network configuration
   for (( NET_NUM=0;NET_NUM<${EURYBOX_DETECTED_NETWORKS[NUM]};NET_NUM++ ))
   do
-    DESTINATION=$EURYBOX_BACKUP_TMP_FOLDER/${EURYBOX_DETECTED_NETWORKS[NAME,$NET_NUM]}.libvirt.xml
+    DESTINATION=$EURYBOX_TMP_FOLDER/${EURYBOX_DETECTED_NETWORKS[NAME,$NET_NUM]}.libvirt.xml
     sudo sh -c "virsh $EURYBOX_VIRSH_OPTIONS net-dumpxml ${EURYBOX_DETECTED_NETWORKS[NAME,$NET_NUM]} > $DESTINATION"
     STATUS=$?
     if [[ !($STATUS -eq 0) ]]
@@ -23,11 +23,11 @@ eurybox_export_hv_config ()
 }
 
 #Desc: export vm xml description
-#1 arg required: vm_name
+#1 arg required: vm_name destination
 eurybox_export_vm_config ()
 {
   NAME=$1
-  DESTINATION=$EURYBOX_BACKUP_TMP_FOLDER/$NAME.libvirt.xml
+  DESTINATION=$2
   sudo sh -c "virsh $EURYBOX_VIRSH_OPTIONS dumpxml $NAME > $DESTINATION"
   STATUS=$?
   if [[ !($STATUS -eq 0) ]]
@@ -35,7 +35,6 @@ eurybox_export_vm_config ()
     eurybox_display_message error EXPORT "Error on vm $NAME configuration dump"
   else
     eurybox_display_message debug EXPORT "Successfully dumped vm $NAME configuration to $DESTINATION"
-    EURYBOX_BACKUP_TARGETS[$((${#EURYBOX_BACKUP_TARGETS[@]}+1))]=$DESTINATION
   fi
 }
 

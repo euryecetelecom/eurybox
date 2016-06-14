@@ -49,12 +49,12 @@ case $EURYBOX_BACKUP_TYPE in
 ###############################
     eurybox_display_message message STATUS "VM Cold backup started"
     #Shutdown all services vm
-    euryboxctrl_shutdown_services_ssh
+    euryboxctrl_shutdown_live_services_ssh
     euryboxctrl_check_all_services_halted
     #Create archive file
     euryboxctrl_create_arch
     #Re-Start all VMs
-    euryboxctrl_start_services
+    euryboxctrl_start_live_services
     #Create errors correcting codes files
     euryboxctrl_create_eccf
     #Create description file

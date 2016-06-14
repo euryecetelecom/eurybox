@@ -2,15 +2,17 @@
 #EuryBOX detect functions file
 
 #Desc: detect archive content from description file
-#1 arg required: description_file
+#1 arg required: detected_archive_num
 eurybox_detect_archive_content ()
 {
-  local DESTINATION=$1
+  local ARCH_NUM=$1
+  local DESTINATION=${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,FILE]}
   local BKP_ENC
   local BKP_COMP
   local BKP_TYPE
   local BKP_VERS
   local BKP_ECC
+  local BKP_VMS_LIST
   local STATUS
   local ARCH_DESC=`sudo cat $DESTINATION 2>&1`
   STATUS=$?
@@ -19,8 +21,9 @@ eurybox_detect_archive_content ()
 #FIXME: STATUS IS NOT 0 WHEN FORBIDEN TO ACCESS FILE
     eurybox_display_message warning DETECT "Archive description access failed: \n$ARCH_DESC"
   else
+    EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,DESC]=$ARCH_DESC
     eurybox_display_message debug DETECT "Archive description access success: \n$ARCH_DESC"
-    BKP_ENC=`echo "${ARCH_DESC}" | grep "ENCRYPTED_ARCHIVE" | awk -F":" '($NF == "true") || ($NF == "false") {print $NF}'`
+    BKP_ENC=`echo "${ARCH_DESC}" | grep "ENCRYPTED_ARCHIVE" | awk -F":" '($NF == "true") || ($NF == "false") {print $NF}' 2>&1`
     if [[ $BKP_ENC = "" ]]
     then
       eurybox_display_message warning DETECT "Archive description encryption search failed"
@@ -28,7 +31,7 @@ eurybox_detect_archive_content ()
       EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,ENC]=$BKP_ENC
       eurybox_display_message debug DETECT "Archive description encryption search success - found: $BKP_ENC"
     fi
-    BKP_COMP=`echo "${ARCH_DESC}" | grep "ARCHIVE_FORMAT" | awk -F":" '{print $NF}'`
+    BKP_COMP=`echo "${ARCH_DESC}" | grep "ARCHIVE_FORMAT" | awk -F":" '{print $NF}' 2>&1`
     case $BKP_COMP in
       "" )
         eurybox_display_message warning DETECT "Archive description compression/format search failed"
@@ -47,7 +50,7 @@ eurybox_detect_archive_content ()
         eurybox_display_message warning DETECT "Archive description compression/format search failed - unknown backup format found: $BKP_COMP"
       ;;
     esac
-    BKP_TYPE=`echo "${ARCH_DESC}" | grep "ARCHIVE_TYPE" | awk -F":" '{print $NF}'`
+    BKP_TYPE=`echo "${ARCH_DESC}" | grep "ARCHIVE_TYPE" | awk -F":" '{print $NF}' 2>&1`
     case $BKP_TYPE in
       "" )
         eurybox_display_message warning DETECT "Archive description type search failed"
@@ -60,7 +63,7 @@ eurybox_detect_archive_content ()
         eurybox_display_message warning DETECT "Archive description type search failed - unknown backup type found: $BKP_TYPE"
       ;;
     esac
-    BKP_VERS=`echo "${ARCH_DESC}" | grep "ARCHIVE_VERSION" | awk -F":" '{print $NF}'`
+    BKP_VERS=`echo "${ARCH_DESC}" | grep "ARCHIVE_VERSION" | awk -F":" '{print $NF}' 2>&1`
     case $BKP_VERS in
       "" )
         eurybox_display_message warning DETECT "Archive description version search failed"
@@ -73,7 +76,7 @@ eurybox_detect_archive_content ()
         eurybox_display_message warning DETECT "Archive description version search failed - unknown backup version found: $BKP_VERS"
       ;;
     esac
-    BKP_ECC=`echo "${ARCH_DESC}" | grep "FEC_FORMAT" | awk -F":" '{print $NF}'`
+    BKP_ECC=`echo "${ARCH_DESC}" | grep "FEC_FORMAT" | awk -F":" '{print $NF}' 2>&1`
     case $BKP_ECC in
       "" )
         eurybox_display_message warning DETECT "Archive description correcting codes search failed"
@@ -86,7 +89,7 @@ eurybox_detect_archive_content ()
         eurybox_display_message warning DETECT "Archive description correcting codes search failed - unknown backup correcting codes found: $BKP_ECC"
       ;;
     esac
-    BKP_HASH=`echo "${ARCH_DESC}" | grep "HASH_FORMAT" | awk -F":" '{print $NF}'`
+    BKP_HASH=`echo "${ARCH_DESC}" | grep "HASH_FORMAT" | awk -F":" '{print $NF}' 2>&1`
     case $BKP_HASH in
       "" )
         eurybox_display_message warning DETECT "Archive description hash search failed"
@@ -99,6 +102,22 @@ eurybox_detect_archive_content ()
         eurybox_display_message warning DETECT "Archive description hash search failed - unknown backup hash found: $BKP_HASH"
       ;;
     esac
+    BKP_VMS_LIST=( $(echo "${ARCH_DESC}" | awk '{ if(content == 1) {print $NF} else { if($0 == "ARCHIVE_CONTENT:") {content=1} } }' | grep "libvirt.xml") )
+    if [[ ${BKP_VMS_LIST[@]} = "" ]]
+    then
+      eurybox_display_message warning DETECT "Archive description VMs search failed"
+    else
+      EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,VM_NUM]=${#BKP_VMS_LIST[@]}
+      eurybox_display_message debug DETECT "${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,VM_NUM]} archive VM(s) found"
+      eurybox_display_message debug DETECT "Detected:\n${BKP_VMS_LIST[*]}"
+#      declare -A EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,VM]
+      for (( VM_NUM=0;VM_NUM<${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,VM_NUM]};VM_NUM++ ))
+      do
+        EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,$VM_NUM,FILE]=${BKP_VMS_LIST[$VM_NUM]}
+        EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,$VM_NUM,NAME]=`echo "${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,$VM_NUM,FILE]}" | awk -F"/" '{ print $NF }' | awk -F"." '{ for(i=1; i<(NF-1); i++) { if(i==1) { name=$i } else { name=name"."$i } } ; print name }'`
+        eurybox_display_message debug DETECT "Archive VM detected: ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,$VM_NUM,NAME]} / filename: ${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,$VM_NUM,FILE]}"
+      done
+    fi
   fi
 }
 
@@ -140,6 +159,9 @@ eurybox_detect_archives ()
 #No arg required
 eurybox_detect_libvirt_env ()
 {
+  local NETWORKS
+  local DOMAINS
+  local DISKS
   #Detect networks
   NETWORKS=( $(sudo virsh $EURYBOX_VIRSH_OPTIONS net-list --all | awk '{print $1}') )
   STATUS=$?
@@ -150,7 +172,7 @@ eurybox_detect_libvirt_env ()
     if [[ !($NETWORKS = "") ]]
     then
       EURYBOX_DETECTED_NETWORKS[NUM]=${#NETWORKS[@]}
-      eurybox_display_message message DETECT "Hypervisors networks - detection OK: ${EURYBOX_DETECTED_NETWORKS[NUM]} virtual network(s) found"
+      eurybox_display_message message DETECT "Hypervisor networks - detection OK: ${EURYBOX_DETECTED_NETWORKS[NUM]} virtual network(s) found"
       for (( NET_NUM=0;NET_NUM<${EURYBOX_DETECTED_NETWORKS[NUM]};NET_NUM++ ))
       do
         EURYBOX_DETECTED_NETWORKS[NAME,$NET_NUM]=${NETWORKS[NET_NUM]}

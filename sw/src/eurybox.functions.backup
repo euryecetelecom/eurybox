@@ -190,6 +190,7 @@ eurybox_backup_prepare_services ()
 {
   local DOM_FOUND
   local DISK_FOUND
+  local DOM_LIVE
   for (( DOM_NUM=0;DOM_NUM<${EURYBOX_DETECTED_DOMAINS[NUM]};DOM_NUM++ ))
   do
     DOM_FOUND=0
@@ -199,6 +200,15 @@ eurybox_backup_prepare_services ()
       if [[ "${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]}" = "${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}" ]]
       then
         DOM_FOUND=1
+        DOM_LIVE=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | grep ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]} 2>&1`
+        if [[ !($DOM_LIVE = "") ]]
+        then
+          EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,LIVE]="true"
+          eurybox_display_message debug BACKUP "VM ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]} - detected running"
+        else
+          EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,LIVE]="false"
+          eurybox_display_message debug BACKUP "VM ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]} - detected not-running"
+        fi
         #Add attached disks to backup list
         for (( DISK_NUM=0;DISK_NUM<${EURYBOX_DETECTED_DISKS[${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]},NUM]};DISK_NUM++ ))
         do
@@ -222,10 +232,11 @@ eurybox_backup_prepare_services ()
     done
     if [[ $DOM_FOUND -eq 0 ]]
     then
-      eurybox_display_message warning BACKUP "Detected domain not in the list for backup: ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]}"
+      eurybox_display_message warning BACKUP "Detected host domain is not in the list for backup: ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]}"
     else
       eurybox_display_message message BACKUP "VM ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]} - prepared for backup"
-      eurybox_export_vm_config ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]}
+      eurybox_export_vm_config ${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]} "$EURYBOX_TMP_FOLDER/${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]}.libvirt.xml"
+      EURYBOX_BACKUP_TARGETS[$((${#EURYBOX_BACKUP_TARGETS[@]}+1))]="$EURYBOX_TMP_FOLDER/${EURYBOX_DETECTED_DOMAINS[NAME,$DOM_NUM]}.libvirt.xml"
     fi
   done
 }
