@@ -49,7 +49,7 @@ eurybox_backup_mount_target ()
     then
       eurybox_display_message error BACKUP "Target local mount point directory $BKP_MOUNT doesn't exists and folder creation failed - error $STATUS:\n$MKDIR_OUT"
     else
-      local CHMOD_OUT=`sudo chmod 777 $BKP_MOUNT 2>&1`
+      local CHMOD_OUT=`sudo chmod -R 777 $BKP_MOUNT 2>&1`
       STATUS=$?
       if [[ !($STATUS -eq 0) ]]
       then

@@ -324,13 +324,13 @@ euryboxctrl_start_live_services ()
 euryboxctrl_update_hypervisor ()
 {
   eurybox_display_message message EURYBOXCTRL "Updating physical machine / hypervisor"
-  eurybox_update_hv
+  eurybox_update_hv ${EURYBOX_DISTRIB_TYPE}
 }
 
 euryboxctrl_update_local_repository ()
 {
   eurybox_display_message message EURYBOXCTRL "Updating local repository"
-  eurybox_update_local_repository
+  eurybox_update_local_repository ${EURYBOX_DISTRIB_TYPE}
 }
 
 euryboxctrl_update_services ()

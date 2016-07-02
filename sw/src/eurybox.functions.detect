@@ -110,7 +110,6 @@ eurybox_detect_archive_content ()
       EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,VM_NUM]=${#BKP_VMS_LIST[@]}
       eurybox_display_message debug DETECT "${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,VM_NUM]} archive VM(s) found"
       eurybox_display_message debug DETECT "Detected:\n${BKP_VMS_LIST[*]}"
-#      declare -A EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,VM]
       for (( VM_NUM=0;VM_NUM<${EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,VM_NUM]};VM_NUM++ ))
       do
         EURYBOX_DETECTED_ARCHIVES[$ARCH_NUM,$VM_NUM,FILE]=${BKP_VMS_LIST[$VM_NUM]}

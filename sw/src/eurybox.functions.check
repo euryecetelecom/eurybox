@@ -1,8 +1,6 @@
 #!/bin/bash
 #EuryBOX check functions file
 
-#TODO: Implement lockfile and check if not already running
-
 #Desc: verify the archive access and content
 #No arg required
 eurybox_check_arch ()
@@ -76,17 +74,15 @@ eurybox_check_configuration ()
   local -i SCRIPT_TYPE=$1
   
   #Checking script execution parameters
-  if [[ -z $EURYBOX_CORPORATE || -z $EURYBOX_LOG_LEVEL || -z $EURYBOX_PARALLELISM_LEVEL ]]
+  if [[ -z $EURYBOX_CORPORATE || -z $EURYBOX_LOG_LEVEL ]]
   then
     eurybox_display_message warning CHECK "Script execution parameters not set. Continuing script execution in debug mode."
     EURYBOX_CORPORATE="EURYECE TELECOM"
     EURYBOX_LOG_LEVEL=debug
-    EURYBOX_PARALLELISM_LEVEL=2
   else
     eurybox_display_message message CHECK "Script execution parameters:"
     eurybox_display_message message CHECK "Corporate: $EURYBOX_CORPORATE"
     eurybox_display_message message CHECK "Log level: $EURYBOX_LOG_LEVEL"
-    eurybox_display_message message CHECK "Parallelism level: $EURYBOX_PARALLELISM_LEVEL"
   fi
 
   #Checking environment parameters
@@ -104,21 +100,16 @@ eurybox_check_configuration ()
     eurybox_display_message debug CHECK "Services number: $EURYBOX_SERVICES_NUMBER"
   fi
   #Checking distribution parameters
-  if [[ -z $EURYBOX_DISTRIB_TYPE || -z $EURYBOX_DISTRIB_VERSION || -z $EURYBOX_DISTRIB_MAC_TYPE ]]
+  if [[ -z $EURYBOX_DISTRIB_TYPE || -z $EURYBOX_DISTRIB_MAC_TYPE ]]
   then
-    eurybox_display_message error CHECK "Distribution parameters not set: Type/$EURYBOX_DISTRIB_TYPE Version/$EURYBOX_DISTRIB_VERSION MAC Type:$EURYBOX_DISTRIB_MAC_TYPE"
+    eurybox_display_message error CHECK "Distribution parameters not set: Type -> $EURYBOX_DISTRIB_TYPE / MAC -> $EURYBOX_DISTRIB_MAC_TYPE"
   else
     case $EURYBOX_DISTRIB_TYPE in
-      centos|redhat ) 
-        if [[ $EURYBOX_DISTRIB_VERSION = "6.0" || $EURYBOX_DISTRIB_VERSION = "6.1" || $EURYBOX_DISTRIB_VERSION = "6.2" || $EURYBOX_DISTRIB_VERSION = "6.3" || $EURYBOX_DISTRIB_VERSION = "6.4" || $EURYBOX_DISTRIB_VERSION = "6.5" || $EURYBOX_DISTRIB_VERSION = "6.6" || $EURYBOX_DISTRIB_VERSION = "6.7" || $EURYBOX_DISTRIB_VERSION = "7.0" || $EURYBOX_DISTRIB_VERSION = "7.1" || $EURYBOX_DISTRIB_VERSION = "7.2" ]]
-        then
-          eurybox_display_message message CHECK "Distribution configured: $EURYBOX_DISTRIB_TYPE - version $EURYBOX_DISTRIB_VERSION"
-        else
-          eurybox_display_message error CHECK "Distribution $EURYBOX_DISTRIB_TYPE - unsupported version: $EURYBOX_DISTRIB_VERSION - please use version 6.x or 7.x"
-        fi
+      fedora20|fedora21|centos7|redhat7|centos6|redhat6|centos5|redhat5|fedora22|fedora23|fedora24|debian6|debian7|debian8|ubuntu12|ubuntu14|ubuntu16|gentoo|archlinux|openbsd5 ) 
+        eurybox_display_message message CHECK "Distribution configured: $EURYBOX_DISTRIB_TYPE"
       ;;
       * )
-        eurybox_display_message error CHECK "Unsupported distribution: $EURYBOX_DISTRIB_TYPE - please use centos or redhat distribution"
+        eurybox_display_message error CHECK "Unsupported distribution: $EURYBOX_DISTRIB_TYPE"
       ;;
     esac
     case $EURYBOX_DISTRIB_MAC_TYPE in
@@ -312,7 +303,7 @@ eurybox_check_hash()
 eurybox_check_kernel()
 {
   #Check kernel name
-  KERNEL_NAME=`uname -s`
+  local KERNEL_NAME=`uname -s`
   if [[ $KERNEL_NAME != "Linux" ]]
   then
     eurybox_display_message error CHECK "Kernel $KERNEL_NAME not supported - please use Linux"
@@ -323,22 +314,41 @@ eurybox_check_kernel()
   #fgrep nfs4 /proc/kallsyms
 }
 
-#Desc: check the hypervisor distribution
+#Desc: check the hypervisor distribution / host parameters
 #No arg required
 eurybox_check_distribution ()
 {
+  #Check distrib type
   case $EURYBOX_DISTRIB_TYPE in
-    centos )
+    centos5|centos6|centos7 )
       DISTRIBUTION_FILE="/etc/centos-release"
     ;;
-    redhat )
+    redhat5|redhat6|redhat7 )
       DISTRIBUTION_FILE="/etc/redhat-release"
     ;;
+    fedora20|fedora21|fedora22|fedora23 )
+      DISTRIBUTION_FILE="/etc/fedora-release"
+    ;;
+    debian6|debian7|debian8 )
+      DISTRIBUTION_FILE="/etc/debian_version"
+    ;;
+    ubuntu12|ubuntu14|ubuntu16 )
+      DISTRIBUTION_FILE="/etc/lsb-release"
+    ;;
+#    openbsd5 )
+#      DISTRIBUTION_FILE=""
+#    ;;
+    gentoo )
+      DISTRIBUTION_FILE="/etc/gentoo-release"
+    ;;
+    archlinux )
+      DISTRIBUTION_FILE="/etc/arch-release"
+    ;;
     * )
-      eurybox_display_message error CHECK "Unsupported distribution: $EURYBOX_DISTRIB_TYPE - please use centos or redhat distribution"
+      eurybox_display_message error CHECK "Unsupported distribution: $EURYBOX_DISTRIB_TYPE"
     ;;
   esac
-  DETECTED_DISTRIBUTION=`grep $EURYBOX_DISTRIB_VERSION $DISTRIBUTION_FILE 2>&1`
+  DETECTED_DISTRIBUTION=`cat $DISTRIBUTION_FILE 2>&1`
   STATUS=$?
   if [[ !($STATUS -eq 0) ]]
   then
@@ -346,12 +356,14 @@ eurybox_check_distribution ()
   else
     if [[ $DETECTED_DISTRIBUTION != "" ]]
     then
+    #TODO: CHECK VERSION COHERENCE FROM FILE CONTENT
       eurybox_display_message message CHECK "Distribution verification success"
       eurybox_display_message debug CHECK "${DETECTED_DISTRIBUTION}"
     else
       eurybox_display_message error CHECK "Configured distribution version doesn't corresponds to detected distribution version: ${DETECTED_DISTRIBUTION}"
     fi
   fi
+  #Check MAC type
   case $EURYBOX_DISTRIB_MAC_TYPE in
     selinux )
       SE_OUT=`sudo getenforce 2>&1`
@@ -382,15 +394,103 @@ eurybox_check_distribution ()
 }
 
 #Desc: check the overall environment
-#1 arg can be supplied as script type (BACKUP/UPDATE/EXEC_COMMAND) to add extra checks
+#1 arg can be supplied as script type (BACKUP/RESTORE/UPDATE/EXEC_COMMAND) to add extra checks
 eurybox_check_environment ()
 {
   local SCRIPT_TYPE=$1
   local STATUS
   local BKP_SPACE_LEFT
   local BKP_ACCESS_OK
-  #Check external sotfware used
-  eurybox_check_command grep sudo ssh openssl tar par2 zfec virsh sha512sum sha256sum awk df tail virt-sysprep tput nmap rpcinfo pigz pbzip2 sshfs curlftpfs lftp cryptsetup
+  #Check common external sotfware used
+  eurybox_check_command grep sudo ssh virsh awk df tail tput nmap
+  #Check specific external sotfware used depending on configuration  
+  if [[ $SCRIPT_TYPE = "BACKUP" || $SCRIPT_TYPE = "RESTORE" ]]
+  then
+    case ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]} in
+      LOCAL )
+      ;;
+      SSH )
+        eurybox_check_command sshfs
+      ;;
+      NFS )
+        eurybox_check_command rpcinfo
+      ;;
+      FTP )
+        eurybox_check_command curlftpfs lftp
+      ;;
+      PART )
+        eurybox_check_command cryptsetup
+      ;;
+      ISCSI|* )
+        eurybox_display_message error CHECK "Unsupported backup destination protocol: ${EURYBOX_BACKUP_DESTINATION[PROTOCOL]}"
+      ;;
+    esac
+    if [[ $SCRIPT_TYPE = "BACKUP" ]]
+    then
+      case ${EURYBOX_BACKUP_ARCHIVE[FORMAT]} in
+        tar )
+          eurybox_check_command tar
+        ;;
+        tar.gz )
+          eurybox_check_command tar pigz
+        ;;
+        tar.bz )
+          eurybox_check_command tar pbzip2
+        ;;
+        * )
+          eurybox_display_message error CHECK "Unsupported backup archive format: ${EURYBOX_BACKUP_ARCHIVE[FORMAT]}"
+        ;;
+      esac
+      case ${EURYBOX_BACKUP_ARCHIVE[HASH]} in
+        sha256 )
+          eurybox_check_command sha256sum
+        ;;        
+        sha512 )
+          eurybox_check_command sha512sum
+        ;;
+        * )
+          eurybox_display_message error CHECK "Unsupported backup archive hash type: ${EURYBOX_BACKUP_ARCHIVE[HASH]}"
+        ;;
+      esac
+      case ${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]} in
+        true )
+          eurybox_check_command openssl
+          ENC_OUT=`echo "TEST"| openssl enc -salt -e -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -k ${EURYBOX_BACKUP_ARCHIVE[PASSWORD]} -out /dev/null 2>&1`
+          STATUS=$?
+          if [[ !($STATUS -eq 0) ]]
+          then
+            eurybox_display_message error CHECK "Encryption engine test failed: error ${STATUS}\n${ENC_OUT}"
+          else 
+            eurybox_display_message debug CHECK "Encryption engine successfully tested"
+          fi
+        ;;
+        false )
+        ;;
+        * )
+          eurybox_display_message error CHECK "Wrong backup archive encryption (true or false): ${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]}"
+        ;;
+      esac
+      case ${EURYBOX_BACKUP_ARCHIVE[FEC]} in
+        par2 )
+          eurybox_check_command par2
+        ;;
+        zfec )
+          eurybox_check_command zfec
+        ;;
+        * )
+          eurybox_display_message error CHECK "Unsupported backup archive FEC format: ${EURYBOX_BACKUP_ARCHIVE[FEC]}"
+        ;;
+      esac
+    fi
+    if [[ $SCRIPT_TYPE = "RESTORE" ]]
+    then
+      eurybox_check_command openssl tar par2 zfec sha512sum sha256sum virt-sysprep pigz pbzip2
+    fi
+    if [[ $SCRIPT_TYPE = "UPDATE" ]]
+    then
+      eurybox_check_command rsync
+    fi
+  fi
   #Check kernel capabilities
   eurybox_check_kernel
   #Check distribution is coherent with configuration
@@ -569,4 +669,13 @@ eurybox_check_vm_access ()
     fi
   fi
 }
+
+#TODO:PACKAGES TO INSTALL
+#yum install -y nmap pigz pbzip2 sshfs curlftpfs lftp cryptsetup par2cmdline libguestfs-tools
+#yum install python-pip gcc python-devel
+#pip install --upgrade pip
+#pip install zfec
+#update: yum-utils / debmirror
+
+#TODO: Implement lockfile and check if not already running
 

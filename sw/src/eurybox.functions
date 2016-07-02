@@ -15,6 +15,7 @@ declare -A EURYBOX_DETECTED_SECRETS
 declare -A EURYBOX_DETECTED_SNAPSHOTS
 declare -A EURYBOX_DETECTED_STORAGE_POOLS
 declare -A EURYBOX_DETECTED_STORAGE_VOLUMES
+declare -A EURYBOX_RESTORE_TARGET_ARCHIVE
 
 #Detect and source all function files
 FUNCTIONS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"

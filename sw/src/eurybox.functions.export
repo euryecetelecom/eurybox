@@ -20,6 +20,7 @@ eurybox_export_hv_config ()
     fi
   done
   #Dumping storage configuration
+  #TODO!
 }
 
 #Desc: export vm xml description

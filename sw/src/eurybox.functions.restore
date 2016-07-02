@@ -1,0 +1,104 @@
+#!/bin/bash
+#EuryBOX restore functions file
+
+#Desc: restore selected target VM(s) from selected backup
+#No arg required
+eurybox_restore_vm ()
+{
+  local VM_FILE
+  local VM_NAME
+  local VM_DISKS
+  local VM_DISKS_NUM
+  local VM_DISK_NAME
+  local RESTORE_OUT
+  local STATUS
+  local VM_NUM_START
+  local VM_NUM_END
+  local VM_ID=${EURYBOX_RESTORE_TARGET_ARCHIVE[VM_ID]}
+  local ARCH_ID=${EURYBOX_RESTORE_TARGET_ARCHIVE[ID]}
+  local ARCH_FILE="${EURYBOX_BACKUP_DESTINATION[MOUNT]}/${EURYBOX_DETECTED_ARCHIVES[${ARCH_ID},FILENAME]}.${EURYBOX_DETECTED_ARCHIVES[${ARCH_ID},FORMAT]}"
+  local ARCH_ENC=${EURYBOX_DETECTED_ARCHIVES[${ARCH_ID},ENC]}
+  local ARCH_FORMAT=${EURYBOX_DETECTED_ARCHIVES[${ARCH_ID},FORMAT]}
+  local DESTINATION="$EURYBOX_TMP_FOLDER"
+  if [[ $VM_ID == "*" ]]
+  then
+    VM_NUM_START=0
+    VM_NUM_END=$(( ${EURYBOX_DETECTED_ARCHIVES[$ARCH_ID,VM_NUM]} - 1))
+  else
+    VM_NUM_START=VM_ID
+    VM_NUM_END=VM_ID
+  fi
+  for (( VM_NUM=${VM_NUM_START};VM_NUM<=${VM_NUM_END};VM_NUM++ ))
+  do
+    VM_FILE=${EURYBOX_DETECTED_ARCHIVES[$ARCH_ID,$VM_NUM,FILE]}
+    VM_NAME=${EURYBOX_DETECTED_ARCHIVES[$ARCH_ID,$VM_NUM,NAME]}
+    eurybox_restore_file $ARCH_FILE $ARCH_FORMAT $ARCH_ENC $VM_FILE $DESTINATION
+    RESTORE_OUT=`sudo virsh $EURYBOX_VIRSH_OPTIONS define $DESTINATION/$VM_FILE`
+    STATUS=$?
+    if [[ !($STATUS -eq 0) ]]
+    then
+      eurybox_display_message error RESTORE "Archive restoration : VM import failed - error $STATUS:\n$RESTORE_OUT"
+    else
+      eurybox_display_message message RESTORE "Archive restoration : VM $VM_NAME description import success"
+      eurybox_display_message debug RESTORE "Archive restoration VM import command output:\n$RESTORE_OUT"
+      DISKS=( $(sudo virsh $EURYBOX_VIRSH_OPTIONS domblklist $VM_NAME | awk '($2 != "-") {print $2}') )
+      STATUS=$?
+      if [[ !($STATUS -eq 0) ]]
+      then
+        eurybox_display_message error RESTORE "Archive restoration : VM disk detection failed - error $STATUS:\n$DISKS[*]"
+      else
+        if [[ !($DISKS = "") ]]
+        then
+          VM_DISKS_NUM=${#DISKS[@]}
+          eurybox_display_message message RESTORE "VM $VM_NAME - $VM_DISKS_NUM disk(s) found"
+          eurybox_display_message debug RESTORE "Detected disk(s) : ${DISKS[*]}"
+          for (( DISK_NUM=0;DISK_NUM<$VM_DISKS_NUM;DISK_NUM++ ))
+          do
+            VM_DISK_NAME=`echo ${DISKS[DISK_NUM]} | awk -F"/" '{ for(i=2; i<=(NF); i++) { if(i==2) { filename=$i } else { filename=filename"/"$i } } ; print filename }'`
+            eurybox_display_message debug RESTORE "VM $VM_NAME - restoring disk: $VM_DISK_NAME to ${DISKS[DISK_NUM]}"
+            eurybox_restore_file $ARCH_FILE $ARCH_FORMAT $ARCH_ENC $VM_DISK_NAME "/"
+          done
+        else
+          eurybox_display_message warning RESTORE "No domain disk detected for VM $VM_NAME"
+        fi
+      fi
+    fi
+  done
+}
+
+#Desc: restore selected files from archive to destination
+#5 args required: archive_file archive_format archive_encrypted selected_files destination
+eurybox_restore_file ()
+{
+  local ARCH_FILE=$1
+  local ARCH_FORMAT=$2
+  local ARCH_ENC=$3
+  local SELECT_FILE=$4
+  local DESTINATION=$5
+  local RESTORE_OUT
+  local SYNC_OUT
+  local STATUS
+  local TAR_OPTIONS
+  case $ARCH_FORMAT in
+    "tar" ) TAR_OPTIONS="-Sxv -C $DESTINATION";;
+    "tar.gz" ) TAR_OPTIONS="-Sxv --use-compress-program=pigz -C $DESTINATION";;
+    "tar.bz2" ) TAR_OPTIONS="-Sxv --use-compress-program=pbzip2 -C $DESTINATION";;
+  esac
+  STATUS=1234
+  if [[ $ARCH_ENC = "true" ]]
+  then
+    RESTORE_OUT=`sudo sh -c "openssl enc -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -d -in $ARCH_FILE -k ${EURYBOX_BACKUP_ARCHIVE[PASSWORD]} | tar ${TAR_OPTIONS} $SELECT_FILE" 2>&1`
+    STATUS=$?
+  else
+    RESTORE_OUT=`sudo sh -c "tar ${TAR_OPTIONS} -f $ARCH_FILE $SELECT_FILE" 2>&1`
+    STATUS=$?
+  fi
+  if [[ !($STATUS -eq 0) ]]
+  then
+    eurybox_display_message warning RESTORE "Archive file(s) $SELECT_FILE restoration failed - error $STATUS:\n$RESTORE_OUT"
+  else
+    eurybox_display_message message RESTORE "Archive file(s) restoration success: ${DESTINATION} => ${SELECT_FILE}"
+    eurybox_display_message debug RESTORE "Archive restoration command output:\n$RESTORE_OUT"
+  fi
+}
+

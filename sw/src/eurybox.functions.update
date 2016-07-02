@@ -2,27 +2,50 @@
 #EuryBOX update functions file
 
 #Desc: update hypervisor
-#FIXME: implement distrib specific update command (with one arg)
-#No arg required
+#1 arg required: operating_system
 eurybox_update_hv ()
 {
-  EURYBOX_HV_UPDATED=0
-  NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  local UPDATE_OUT
+  local OS=$1
+  local EURYBOX_HV_UPDATED=0
+  local NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
   while [[ ( $EURYBOX_HV_UPDATED -eq 0 ) && !( $NB_TRY_LEFT -eq 0 ) ]]
   do
-    UPDATE_OUT=`sudo yum -y update 2>&1`
+    case $OS in
+      fedora20|fedora21|centos7|redhat7|centos6|redhat6|centos5|redhat5 )
+        UPDATE_OUT=`sudo yum -y update 2>&1`
+      ;;
+      fedora22|fedora23|fedora24 )
+        UPDATE_OUT=`sudo dnf -y update 2>&1`
+      ;;
+      debian6|debian7|debian8|ubuntu12|ubuntu14|ubuntu16 )
+        UPDATE_OUT=`sudo apt-get -y update && apt-get -y upgrade 2>&1`
+      ;;
+      openbsd5 )
+        UPDATE_OUT=`echo "Not Implemented Yet"`
+      ;;
+      gentoo )
+        UPDATE_OUT=`sudo emerge --sync && sudo emerge -uDU --with-bdeps=y @world && sudo emerge -av --depclean && sudo emerge --update --newuse --deep @world && sudo revdep-rebuild -v 2>&1`
+      ;;
+      archlinux )
+        UPDATE_OUT=`sudo pacman -Syy && sudo pacman -Su 2>&1`
+      ;;
+      * )
+        eurybox_display_message error UPDATE "OS unknown : $OS"
+      ;;
+    esac
     STATUS=$?
     if [[ $STATUS -eq 0 ]]
     then
       EURYBOX_HV_UPDATED=1
     else
-      eurybox_display_message debug UPDATE "Hypervisor update failed - trying again in 5 seconds - error $STATUS:\n$UPDATE_OUT\n$NB_TRY_LEFT left"
-      sleep 5
+      NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+      eurybox_display_message debug UPDATE "Hypervisor update failed - trying again - error $STATUS:\n$UPDATE_OUT\n$NB_TRY_LEFT left"
     fi
   done
   if [[ $NB_TRY_LEFT -eq 0 ]]
   then
-    eurybox_display_message error UPDATE "Hypervisor update failed - no success after $EURYBOX_MAX_RETRY_ON_FAILURE"
+    eurybox_display_message error UPDATE "Hypervisor update failed - no success after $EURYBOX_MAX_RETRY_ON_FAILURE attempts - error $STATUS:\n${UPDATE_OUT}"
   else
     eurybox_display_message message UPDATE "Hypervisor update OK"
     eurybox_display_message debug UPDATE "Update command output:\n$UPDATE_OUT"
@@ -33,20 +56,21 @@ eurybox_update_hv ()
 #5 args required: vm_name vm_host vm_user vm_ssh_port operating_system
 eurybox_update_vm ()
 {
-  NAME=$1  
-  HOST=$2
-  USER=$3
-  PORT=$4
-  OS=$5
-  EURYBOX_VM_UPDATED=0
-  NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  local UPDATE_OUT
+  local NAME=$1
+  local HOST=$2
+  local USER=$3
+  local PORT=$4
+  local OS=$5
+  local EURYBOX_VM_UPDATED=0
+  local NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
   while [[ ( $EURYBOX_VM_UPDATED -eq 0 ) && !( $NB_TRY_LEFT -eq 0 ) ]]
   do
     case $OS in
       fedora20|fedora21|centos7|redhat7|centos6|redhat6|centos5|redhat5 )
         UPDATE_OUT=`ssh $EURYBOX_SSH_OPTIONS -p $PORT $USER@$HOST "yum -y update" 2>&1`
       ;;
-      fedora22|fedora23 )
+      fedora22|fedora23|fedora24 )
         UPDATE_OUT=`ssh $EURYBOX_SSH_OPTIONS -p $PORT $USER@$HOST "dnf -y update" 2>&1`
       ;;
       debian6|debian7|debian8|ubuntu12|ubuntu14|ubuntu16 )
@@ -61,19 +85,22 @@ eurybox_update_vm ()
       archlinux )
         UPDATE_OUT=`ssh $EURYBOX_SSH_OPTIONS -p $PORT $USER@$HOST "pacman -Syy && pacman -Su" 2>&1`
       ;;
+      * )
+        eurybox_display_message error UPDATE "OS unknown : $OS"
+      ;;
     esac
     STATUS=$?
     if [[ $STATUS -eq 0 ]]
     then
       EURYBOX_VM_UPDATED=1
     else
-      eurybox_display_message debug UPDATE "VM $NAME update failed - trying again in 5 seconds - error $STATUS:\n$UPDATE_OUT\n$NB_TRY_LEFT left"
-      sleep 5
+      NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+      eurybox_display_message debug UPDATE "VM $NAME update failed - trying again - error $STATUS:\n$UPDATE_OUT\n$NB_TRY_LEFT left"
     fi
   done
   if [[ $NB_TRY_LEFT -eq 0 ]]
   then
-    eurybox_display_message error UPDATE "VM $NAME - update failed - no success after $EURYBOX_MAX_RETRY_ON_FAILURE"
+    eurybox_display_message error UPDATE "VM $NAME - update failed - no success after $EURYBOX_MAX_RETRY_ON_FAILURE attempts - error $STATUS:\n${UPDATE_OUT}"
   else
     eurybox_display_message message UPDATE "VM $NAME - update OK"
     eurybox_display_message debug UPDATE "Update command output:\n$UPDATE_OUT"
@@ -81,17 +108,79 @@ eurybox_update_vm ()
 }
 
 #Desc: update local repository
-#No arg required
+#1 arg required: operating_system
 eurybox_update_local_repository ()
 {
-  eurybox_display_message warning UPDATE "Not implemented yet"
-#eurybox_display_message message STATUS "Updating local repository"
-#reposync -n -d -p /local_repo/
-#eurybox_display_message message STATUS "Updating repository descriptions"
-##TODO: CHECK IF REPO EXIST AND CREATE (NO UPDATE) IF NOT + ADD VARIABLE REPOS LIST + SCRIPT AUTO DEPLOY
-#createrepo --update /local_repo/base/Packages
-#createrepo --update /local_repo/updates/Packages
-#createrepo --update /local_repo/extras/Packages
-#createrepo --update /local_repo/epel
+  local UPDATE_OUT
+  local REPO_UPDATED_NUM
+  local REPO_ERRORS
+  local REPO_PATH=${EURYBOX_UPDATE_LOCAL_REPOSITORIES_PATH}
+  local OS=$1
+  local EURYBOX_REPO_UPDATED=0
+  local NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
+  eurybox_display_message message UPDATE "Updating local repositories"
+  while [[ ( $EURYBOX_REPO_UPDATED -eq 0 ) && !( $NB_TRY_LEFT -eq 0 ) ]]
+  do
+    REPO_UPDATED_NUM=0
+    REPO_ERRORS=""
+    for (( REPO_NUM=1;REPO_NUM<=${EURYBOX_UPDATE_LOCAL_REPOSITORIES_NUMBER};REPO_NUM++ ))
+    do
+      NAME=${EURYBOX_UPDATE_LOCAL_REPOSITORIES[${REPO_NUM},NAME]}
+      ARCH=${EURYBOX_UPDATE_LOCAL_REPOSITORIES[${REPO_NUM},ARCH]}
+      URI=${EURYBOX_UPDATE_LOCAL_REPOSITORIES[${REPO_NUM},URI]}
+      eurybox_display_message message UPDATE "Updating repository : $NAME - arch: $ARCH - uri: $URI"
+      MKDIR_OUT=`sudo mkdir -p ${REPO_PATH}/${NAME}/${ARCH}`
+      UPDATE_OUT=`sudo sh -c "rsync -avzHm --include=**${ARCH}** --include=*/ --exclude=* $URI ${REPO_PATH}/${NAME}/${ARCH}" 2>&1`
+      STATUS=$?
+      if [[ $STATUS -eq 0 ]]
+      then
+        eurybox_display_message message UPDATE "Local repository $NAME - $URI - clone OK"
+        eurybox_display_message debug UPDATE "Mkdir command output:\n$MKDIR_OUT"
+        eurybox_display_message debug UPDATE "Clone command output:\n$UPDATE_OUT"
+#TODO:MAC MASK
+        UPDATE_OUT=`sudo chmod -R 500 ${REPO_PATH}/${NAME}/${ARCH} 2>&1`
+        STATUS=$?
+        if [[ $STATUS -eq 0 ]]
+        then
+          eurybox_display_message message UPDATE "Local repository $NAME - MAC permissions change OK"
+          REPO_UPDATED_NUM=$(( ${REPO_UPDATED_NUM} + 1 ))
+        else
+          if [[ $REPO_ERRORS = "" ]]
+          then
+            REPO_ERRORS="${NAME}:\n${UPDATE_OUT}"
+          else
+            REPO_ERRORS="${REPO_ERRORS}\n\n${NAME}:\n${UPDATE_OUT}"
+          fi
+          eurybox_display_message debug UPDATE "Local repository $NAME MAC permissions change failed - trying others - error $STATUS:\n$UPDATE_OUT"
+        fi
+      else
+        if [[ $REPO_ERRORS = "" ]]
+        then
+          REPO_ERRORS="${NAME}:\n${UPDATE_OUT}"
+        else
+          REPO_ERRORS="${REPO_ERRORS}\n\n${NAME}:\n${UPDATE_OUT}"
+        fi
+        eurybox_display_message debug UPDATE "Local repository $NAME clone failed - trying others - error $STATUS:\n$UPDATE_OUT"
+      fi
+      if [[ $REPO_NUM -eq ${EURYBOX_UPDATE_LOCAL_REPOSITORIES_NUMBER} ]]
+      then
+        if [[ $REPO_UPDATED_NUM -eq ${EURYBOX_UPDATE_LOCAL_REPOSITORIES_NUMBER} ]]
+        then
+          EURYBOX_REPO_UPDATED=1
+        else
+          NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+          eurybox_display_message debug UPDATE "Local repositories update failed - trying again\n$NB_TRY_LEFT left"
+        fi
+      fi
+    done
+  done
+  if [[ $NB_TRY_LEFT -eq 0 ]]
+  then
+    eurybox_display_message error UPDATE "Local repositories update failed - no success after $EURYBOX_MAX_RETRY_ON_FAILURE attempts - persistent errors:\n${REPO_ERRORS}"
+  else
+    eurybox_display_message message UPDATE "Local repositories update success"
+  fi
 }
+
+##TODO: SCRIPT AUTO DEPLOY LOCAL REPOS IN SERVICES VM
 
