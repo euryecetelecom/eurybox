@@ -95,7 +95,7 @@ eurybox_check_configuration ()
     eurybox_display_message message CHECK "Hypervisor: ${EURYBOX_HYPERVISOR[*]}"
     for ((EURYBOX_SERVICES_NUM=1;EURYBOX_SERVICES_NUM<=$EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM++));
     do
-      eurybox_display_message message CHECK "Target service: host:${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]}, name: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}, ssh user: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,USER]}, ssh port: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,PORT]}, OS: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,OS]}, disks: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,DISK]}"
+      eurybox_display_message message CHECK "Target service: host:${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,HOST]}, name: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,NAME]}, ssh user: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,USER]}, ssh port: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,PORT]}, OS: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,OS]}, additional disks: ${EURYBOX_SERVICES[$EURYBOX_SERVICES_NUM,DISK]}"
     done
     eurybox_display_message debug CHECK "Services number: $EURYBOX_SERVICES_NUMBER"
   fi
@@ -154,6 +154,7 @@ eurybox_check_configuration ()
       eurybox_display_message error CHECK "Bad hypervisor type: ${EURYBOX_HYPERVISOR[TYPE]}"
     ;;
   esac
+  EURYBOX_RSYNC_OPTIONS="-azHmS --timeout=$EURYBOX_NETWORK_TIMEOUT"
   EURYBOX_SSH_OPTIONS="-oPasswordAuthentication=no -oConnectTimeout=$EURYBOX_NETWORK_TIMEOUT -oConnectionAttempts=$EURYBOX_MAX_RETRY_ON_FAILURE"
   EURYBOX_NMAP_OPTIONS="--host-timeout $EURYBOX_NETWORK_TIMEOUT --max-retries $EURYBOX_MAX_RETRY_ON_FAILURE"
   EURYBOX_LS_OPTIONS="-x"
@@ -163,6 +164,7 @@ eurybox_check_configuration ()
   case $EURYBOX_LOG_LEVEL in
     debug )
       set -xv
+      EURYBOX_RSYNC_OPTIONS+=" -v"
       EURYBOX_SSH_OPTIONS+=" -oLogLevel=debug"
       EURYBOX_NMAP_OPTIONS+=" -d9 -v3"
       EURYBOX_LS_OPTIONS+=" -a"
@@ -173,6 +175,7 @@ eurybox_check_configuration ()
     ;;
     verbose )
       set -v
+      EURYBOX_RSYNC_OPTIONS+=" -v"
       EURYBOX_SSH_OPTIONS+=" -oLogLevel=verbose"
       EURYBOX_NMAP_OPTIONS+=" -d0 -v2"
       EURYBOX_LS_OPTIONS+=" -l"
@@ -201,13 +204,14 @@ eurybox_check_configuration ()
       EURYBOX_MNT_SSHFS_OPTIONS+=" -oLogLevel=error"
     ;;
   esac
-  eurybox_display_message debug CHECK "ssh options: $EURYBOX_SSH_OPTIONS"
-  eurybox_display_message debug CHECK "nmap options: $EURYBOX_NMAP_OPTIONS"
-  eurybox_display_message debug CHECK "ls options: $EURYBOX_LS_OPTIONS"
-  eurybox_display_message debug CHECK "virsh options: $EURYBOX_VIRSH_OPTIONS"
-  eurybox_display_message debug CHECK "nfs mount options: $EURYBOX_MNT_NFS_OPTIONS"
-  eurybox_display_message debug CHECK "sshfs mount options: $EURYBOX_MNT_SSHFS_OPTIONS"
   eurybox_display_message debug CHECK "ftpfs mount options: $EURYBOX_MNT_FTPFS_OPTIONS"
+  eurybox_display_message debug CHECK "ls options: $EURYBOX_LS_OPTIONS"
+  eurybox_display_message debug CHECK "nfs mount options: $EURYBOX_MNT_NFS_OPTIONS"
+  eurybox_display_message debug CHECK "nmap options: $EURYBOX_NMAP_OPTIONS"
+  eurybox_display_message debug CHECK "rsync options: $EURYBOX_RSYNC_OPTIONS"
+  eurybox_display_message debug CHECK "ssh options: $EURYBOX_SSH_OPTIONS"
+  eurybox_display_message debug CHECK "sshfs mount options: $EURYBOX_MNT_SSHFS_OPTIONS"
+  eurybox_display_message debug CHECK "virsh options: $EURYBOX_VIRSH_OPTIONS"
 }
 
 #Desc: verify the archive ECCF and try to repair it

@@ -40,12 +40,13 @@ eurybox_update_hv ()
       EURYBOX_HV_UPDATED=1
     else
       NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-      eurybox_display_message debug UPDATE "Hypervisor update failed - trying again - error $STATUS:\n$UPDATE_OUT\n$NB_TRY_LEFT left"
+      eurybox_display_message debug UPDATE "Hypervisor update failed - trying again in ${EURYBOX_ERROR_TEMPORISATION_TIME} seconds - error $STATUS:\n$UPDATE_OUT\n$NB_TRY_LEFT left"
+      sleep ${EURYBOX_ERROR_TEMPORISATION_TIME}
     fi
   done
   if [[ $NB_TRY_LEFT -eq 0 ]]
   then
-    eurybox_display_message error UPDATE "Hypervisor update failed - no success after $EURYBOX_MAX_RETRY_ON_FAILURE attempts - error $STATUS:\n${UPDATE_OUT}"
+    eurybox_display_message warning UPDATE "Hypervisor update failed - no success after $EURYBOX_MAX_RETRY_ON_FAILURE attempts - error $STATUS:\n${UPDATE_OUT}"
   else
     eurybox_display_message message UPDATE "Hypervisor update OK"
     eurybox_display_message debug UPDATE "Update command output:\n$UPDATE_OUT"
@@ -95,7 +96,8 @@ eurybox_update_vm ()
       EURYBOX_VM_UPDATED=1
     else
       NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-      eurybox_display_message debug UPDATE "VM $NAME update failed - trying again - error $STATUS:\n$UPDATE_OUT\n$NB_TRY_LEFT left"
+      eurybox_display_message debug UPDATE "VM $NAME update failed - trying again in ${EURYBOX_ERROR_TEMPORISATION_TIME} seconds - error $STATUS:\n$UPDATE_OUT\n$NB_TRY_LEFT left"
+      sleep ${EURYBOX_ERROR_TEMPORISATION_TIME}
     fi
   done
   if [[ $NB_TRY_LEFT -eq 0 ]]
@@ -130,11 +132,11 @@ eurybox_update_local_repository ()
       URI=${EURYBOX_UPDATE_LOCAL_REPOSITORIES[${REPO_NUM},URI]}
       eurybox_display_message message UPDATE "Updating repository : $NAME - arch: $ARCH - uri: $URI"
       MKDIR_OUT=`sudo mkdir -p ${REPO_PATH}/${NAME}/${ARCH}`
-      UPDATE_OUT=`sudo sh -c "rsync -avzHm --include=**${ARCH}** --include=*/ --exclude=* $URI ${REPO_PATH}/${NAME}/${ARCH}" 2>&1`
+      UPDATE_OUT=`sudo sh -c "rsync $EURYBOX_RSYNC_OPTIONS --include=**${ARCH}** --include=*/ --exclude=* $URI ${REPO_PATH}/${NAME}/${ARCH}" 2>&1`
       STATUS=$?
       if [[ $STATUS -eq 0 ]]
       then
-        eurybox_display_message message UPDATE "Local repository $NAME - $URI - clone OK"
+        eurybox_display_message debug UPDATE "Local repository $NAME - $URI - Clone OK"
         eurybox_display_message debug UPDATE "Mkdir command output:\n$MKDIR_OUT"
         eurybox_display_message debug UPDATE "Clone command output:\n$UPDATE_OUT"
 #TODO:MAC MASK
@@ -142,7 +144,8 @@ eurybox_update_local_repository ()
         STATUS=$?
         if [[ $STATUS -eq 0 ]]
         then
-          eurybox_display_message message UPDATE "Local repository $NAME - MAC permissions change OK"
+          eurybox_display_message debug UPDATE "Local repository $NAME - MAC permissions change OK"
+          eurybox_display_message message UPDATE "Local repository $NAME - $URI - Update OK"
           REPO_UPDATED_NUM=$(( ${REPO_UPDATED_NUM} + 1 ))
         else
           if [[ $REPO_ERRORS = "" ]]
@@ -169,14 +172,15 @@ eurybox_update_local_repository ()
           EURYBOX_REPO_UPDATED=1
         else
           NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-          eurybox_display_message debug UPDATE "Local repositories update failed - trying again\n$NB_TRY_LEFT left"
+          eurybox_display_message debug UPDATE "Local repositories update failed - trying again in ${EURYBOX_ERROR_TEMPORISATION_TIME} seconds\n$NB_TRY_LEFT left"
+          sleep ${EURYBOX_ERROR_TEMPORISATION_TIME}
         fi
       fi
     done
   done
   if [[ $NB_TRY_LEFT -eq 0 ]]
   then
-    eurybox_display_message error UPDATE "Local repositories update failed - no success after $EURYBOX_MAX_RETRY_ON_FAILURE attempts - persistent errors:\n${REPO_ERRORS}"
+    eurybox_display_message warning UPDATE "Local repositories update failed - no success after $EURYBOX_MAX_RETRY_ON_FAILURE attempts - persistent errors:\n${REPO_ERRORS}"
   else
     eurybox_display_message message UPDATE "Local repositories update success"
   fi

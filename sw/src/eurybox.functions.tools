@@ -64,47 +64,68 @@ eurybox_display_message ()
     debug ) 
       if [[ $EURYBOX_LOG_LEVEL = "debug" || $EURYBOX_LOG_LEVEL = "verbose" ]]
       then
-        tput setb 0
-        tput setaf 6
+        if [ -t 1 ]
+        then
+          tput setb 0
+          tput setaf 6
+        fi
         printf "$NOW [EURYBOX][$CATEGORY][DEBUG] %b\n" "$MESSAGE"
       fi
     ;;
     message )
       if [[ $EURYBOX_LOG_LEVEL = "debug" || $EURYBOX_LOG_LEVEL = "info" || $EURYBOX_LOG_LEVEL = "verbose" ]]
       then
-        tput setb 0
-        tput setaf 2
+        if [ -t 1 ]
+        then
+          tput setb 0
+          tput setaf 2
+        fi
         printf "$NOW [EURYBOX][$CATEGORY][INFO] %b\n" "$MESSAGE"
       fi
     ;;
     warning )
       if [[ $EURYBOX_LOG_LEVEL = "debug" || $EURYBOX_LOG_LEVEL = "info" || $EURYBOX_LOG_LEVEL = "verbose" || $EURYBOX_LOG_LEVEL = "warning" ]]
       then
-         tput setb 0
-         tput setaf 1
+        if [ -t 1 ]
+        then
+          tput setb 0
+          tput setaf 1
+        fi
         printf "$NOW [EURYBOX][$CATEGORY][WARNING] %b\n" "$MESSAGE"
       fi
     ;;
     error )
       if [[ $EURYBOX_LOG_LEVEL = "debug" || $EURYBOX_LOG_LEVEL = "info" || $EURYBOX_LOG_LEVEL = "verbose" || $EURYBOX_LOG_LEVEL = "warning" || $EURYBOX_LOG_LEVEL = "error" ]]
       then
-         tput setb 0
-         tput setaf 1
-         printf "$NOW [EURYBOX][$CATEGORY][ERROR] %b\n" "$MESSAGE"
-         tput setb 0
-         tput sgr0
-         printf "Stopping script execution\n"
-         exit 1
+        if [ -t 1 ]
+        then
+          tput setb 0
+          tput setaf 1
+        fi
+        printf "$NOW [EURYBOX][$CATEGORY][ERROR] %b\n" "$MESSAGE"
+        if [ -t 1 ]
+        then
+          tput setb 0
+          tput sgr0
+        fi
+        printf "Stopping script execution\n"
+        exit 1
       fi
     ;;
-    * ) 
-      tput sgr0
+    * )
+      if [ -t 1 ]
+      then
+        tput sgr0
+      fi
       printf "$NOW [EURYBOX][SYNTAX][ERROR] Bad log level message. Stopping script execution\n"
       exit 1
     ;;
   esac
-  tput setb 0
-  tput sgr0
+  if [ -t 1 ]
+  then
+    tput setb 0
+    tput sgr0
+  fi
 }
 
 #Desc: echo detected archives, sorted by name, year and month
@@ -283,9 +304,9 @@ eurybox_exec_ssh_command ()
       eurybox_display_message message TOOLS "Command execution - OK: $CMD"
       eurybox_display_message debug TOOLS "Command execution output:\n$CMD_OUT"
     else
-      eurybox_display_message warning TOOLS "Command execution failed - trying again in 5 seconds - error $STATUS:\n$CMD_OUT\n$NB_TRY_LEFT left"
       NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-      sleep 5
+      eurybox_display_message warning TOOLS "Command execution failed - trying again in ${EURYBOX_ERROR_TEMPORISATION_TIME} seconds - error $STATUS:\n$CMD_OUT\n$NB_TRY_LEFT left"
+      sleep ${EURYBOX_ERROR_TEMPORISATION_TIME}
     fi
   done
   if [[ $NB_TRY_LEFT -eq 0 ]]

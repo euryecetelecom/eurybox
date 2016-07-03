@@ -13,8 +13,6 @@ euryboxctrl_check_all_vm_halted ()
 
 euryboxctrl_check_all_services_halted ()
 {
-  #Check that no vm at all are still running
-##  EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | awk '(NR>2) && ($0 != "") {print $2}'`
   local EURYBOX_VM_NAME
   #Check that no services vm are still running
   for ((EURYBOX_SERVICES_NUM=EURYBOX_SERVICES_NUMBER;EURYBOX_SERVICES_NUM>=1;EURYBOX_SERVICES_NUM--));
@@ -99,6 +97,7 @@ euryboxctrl_create_sign ()
 
 euryboxctrl_discover_available_archives ()
 {
+  local LNAME
   #Mount backup target
   eurybox_display_message message EURYBOXCTRL "Mounting backup origin"
   eurybox_backup_mount_target

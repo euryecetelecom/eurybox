@@ -1,7 +1,7 @@
 -------------------------------
 Project: EuryBOX
 Version: 1.0.0
-Date: 2016/04/02
+Status: beta
 -------------------------------
 Author(s):
 Guillaume REMBERT
@@ -53,8 +53,8 @@ FIXME: TBD / Features, supported platforms, etc
 -------------------------------
 \ cfg (ConFiGuration): configuration files
 -------------------------------
-    \ hw (HardWare): TBD
-    \ sw (SoftWare): TBD
+    \ hw (HardWare): physical configuration elements
+    \ sw (SoftWare): logical configuration elements
 -------------------------------
 \ doc (DOCumentation): documentation
 -------------------------------

@@ -85,7 +85,7 @@ eurybox_create_archive_tar ()
   fi
   if [[ !($STATUS -eq 0) ]]
   then
-    eurybox_display_message error CREATE "Archive creation failed - error: $STATUS:\n$TAR_OUT"
+    eurybox_display_message warning CREATE "Archive creation failed - error: $STATUS:\n$TAR_OUT"
   else
     eurybox_display_message message CREATE "Archive creation - OK"
     eurybox_display_message debug CREATE "Tar command output:\n$TAR_OUT"

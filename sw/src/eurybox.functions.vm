@@ -102,6 +102,7 @@ eurybox_vm_shutdown_acpi ()
 {
   local NAME=$1
   local STATUS
+  local VIRSH_OUT
   #Waiting for the VM to be stopped
   local EURYBOX_VM_NAME
   local EURYBOX_VM_STATE=1
@@ -116,29 +117,44 @@ eurybox_vm_shutdown_acpi ()
    else
       if [[ $EURYBOX_VM_STOPPED -eq 0 ]]
       then
-        sudo virsh $EURYBOX_VIRSH_OPTIONS shutdown $NAME
+        VIRSH_OUT=`sudo virsh $EURYBOX_VIRSH_OPTIONS shutdown $NAME 2>&1`
         STATUS=$?
         if [[ !($STATUS -eq 0) ]]
         then
-          eurybox_display_message warning VM "Error on vm $NAME stop - trying again in 5 seconds / $NB_TRY_LEFT left"
           NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+          eurybox_display_message debug VM "VM $NAME - stop failed - error $STATUS:\n$VIRSH_OUT\nTrying again in ${EURYBOX_ERROR_TEMPORISATION_TIME} seconds / $NB_TRY_LEFT left"
         else
           EURYBOX_VM_STOPPED=1
-          eurybox_display_message message VM "Successfully initiated vm $NAME stop - waiting for vm poweroff"
+          eurybox_display_message message VM "Successfully initiated VM $NAME stop - waiting for vm poweroff"
           NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
         fi
       else
         NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-        eurybox_display_message debug VM "VM $NAME - still running - trying again in 5 seconds / $NB_TRY_LEFT left"
+        eurybox_display_message debug VM "VM $NAME - still running - trying again in ${EURYBOX_ERROR_TEMPORISATION_TIME} seconds / $NB_TRY_LEFT left"
       fi
-     sleep 5
+     sleep ${EURYBOX_ERROR_TEMPORISATION_TIME}
    fi
   done
   if [[ $NB_TRY_LEFT -eq 0 ]]
   then
-    eurybox_display_message error VM "VM $NAME - stop failed - VM still running after $EURYBOX_MAX_RETRY_ON_FAILURE: $EURYBOX_VM_NAME"
+    eurybox_display_message warning VM "VM $NAME - ACPI stop failed - VM still running after $EURYBOX_MAX_RETRY_ON_FAILURE:\n$EURYBOX_VM_NAME\n error $STATUS:\n$VIRSH_OUT\nForcing stop"
+    VIRSH_OUT=`sudo virsh $EURYBOX_VIRSH_OPTIONS destroy $NAME 2>&1`
+    STATUS=$?
+    if [[ !($STATUS -eq 0) ]]
+    then
+      eurybox_display_message error VM "VM $NAME - forced stop failed - error $STATUS:\n$VIRSH_OUT"
+    else
+      eurybox_display_message message VM "Successfully initiated VM $NAME forced stop"
+      EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | awk '{ if ($2 == name) {print $2} }' name=$NAME  2>&1`
+      if [[ -z "$EURYBOX_VM_NAME" ]]
+      then
+        eurybox_display_message message VM "VM $NAME - forced stop OK"
+      else
+        eurybox_display_message error VM "VM $NAME - forced stop failed - VM still running:\n$EURYBOX_VM_NAME"
+      fi
+    fi
   else
-    eurybox_display_message message VM "VM $NAME - stop OK"
+    eurybox_display_message message VM "VM $NAME - ACPI stop OK"
   fi
 }
 
@@ -155,6 +171,7 @@ eurybox_vm_shutdown_ssh ()
   local STATUS
   local EURYBOX_VM_NAME
   local SSH_OUT
+  local VIRSH_OUT
   local NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
   while [[ ( $EURYBOX_VM_STATE -eq 1 ) && !( $NB_TRY_LEFT -eq 0 ) ]]
   do
@@ -169,25 +186,40 @@ eurybox_vm_shutdown_ssh ()
         STATUS=$?
         if [[ !($STATUS -eq 0) ]]
         then
-          eurybox_display_message warning VM "VM $NAME - stop failed - trying again in 5 seconds:\n$SSH_OUT\n$NB_TRY_LEFT left"
           NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+          eurybox_display_message debug VM "VM $NAME - SSH stop failed - trying again in ${EURYBOX_ERROR_TEMPORISATION_TIME} seconds:\n$SSH_OUT\n$NB_TRY_LEFT left"
         else
           EURYBOX_VM_STOPPED=1
-          eurybox_display_message message VM "Successfully initiated vm $NAME stop - waiting for vm poweroff"
+          eurybox_display_message debug VM "Successfully initiated vm $NAME stop - waiting for vm poweroff"
           NB_TRY_LEFT=$EURYBOX_MAX_RETRY_ON_FAILURE
         fi
       else
         NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-        eurybox_display_message debug VM "VM $NAME - still running - trying again in 5 seconds:\n$EURYBOX_VM_NAME\n$NB_TRY_LEFT left"
+        eurybox_display_message debug VM "VM $NAME - still running - trying again in ${EURYBOX_ERROR_TEMPORISATION_TIME} seconds:\n$EURYBOX_VM_NAME\n$NB_TRY_LEFT left"
       fi
-     sleep 5
+     sleep ${EURYBOX_ERROR_TEMPORISATION_TIME}
     fi
   done
   if [[ $NB_TRY_LEFT -eq 0 ]]
   then
-    eurybox_display_message error VM "VM $NAME - stop failed - VM still running after $EURYBOX_MAX_RETRY_ON_FAILURE:\n$EURYBOX_VM_NAME"
+    eurybox_display_message warning VM "VM $NAME - SSH stop failed - VM still running after $EURYBOX_MAX_RETRY_ON_FAILURE:\n$EURYBOX_VM_NAME\n error $STATUS:\n$SSH_OUT\nForcing stop"
+    VIRSH_OUT=`sudo virsh $EURYBOX_VIRSH_OPTIONS destroy $NAME 2>&1`
+    STATUS=$?
+    if [[ !($STATUS -eq 0) ]]
+    then
+      eurybox_display_message error VM "VM $NAME - forced stop failed - error $STATUS:\n$VIRSH_OUT"
+    else
+      eurybox_display_message message VM "Successfully initiated VM $NAME forced stop"
+      EURYBOX_VM_NAME=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | awk '{ if ($2 == name) {print $2} }' name=$NAME  2>&1`
+      if [[ -z "$EURYBOX_VM_NAME" ]]
+      then
+        eurybox_display_message message VM "VM $NAME - forced stop OK"
+      else
+        eurybox_display_message error VM "VM $NAME - forced stop failed - VM still running:\n$EURYBOX_VM_NAME"
+      fi
+    fi
   else
-    eurybox_display_message message VM "VM $NAME - stop OK"
+    eurybox_display_message message VM "VM $NAME - SSH stop OK"
   fi
 }
 
@@ -224,8 +256,8 @@ eurybox_vm_start ()
           VM_OUT=`sudo virsh $EURYBOX_VIRSH_OPTIONS list | awk '{ if ($2 == name) {print $2} }' name=$NAME 2>&1`
           if [[ -z "$VM_OUT" ]]
           then
-            eurybox_display_message warning VM "Error on vm $NAME start - trying again in 5 seconds:\n$VIRSH_OUT\n$NB_TRY_LEFT left"
             NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
+            eurybox_display_message debug VM "Error on vm $NAME start - trying again in ${EURYBOX_ERROR_TEMPORISATION_TIME} seconds:\n$VIRSH_OUT\n$NB_TRY_LEFT left"
           else
             eurybox_display_message debug VM "VM $NAME already running - waiting for network contact"
             EURYBOX_VM_STARTED=1
@@ -238,16 +270,16 @@ eurybox_vm_start ()
         fi
       else
         NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-        eurybox_display_message debug VM "VM $NAME - still unreachable - trying again in 5 seconds\n$EURYBOX_VM_AVAILABLE\n$NB_TRY_LEFT left"
+        eurybox_display_message debug VM "VM $NAME - still unreachable - trying again in ${EURYBOX_ERROR_TEMPORISATION_TIME} seconds\n$EURYBOX_VM_AVAILABLE\n$NB_TRY_LEFT left"
       fi
-      sleep 5
+      sleep ${EURYBOX_ERROR_TEMPORISATION_TIME}
     fi
   done
   if [[ $NB_TRY_LEFT -eq 0 ]]
   then
-    eurybox_display_message error VM "VM $NAME - start failed - no network contact after $EURYBOX_MAX_RETRY_ON_FAILURE"
+    eurybox_display_message warning VM "VM $NAME - start failed - no network contact after $EURYBOX_MAX_RETRY_ON_FAILURE:\n${EURYBOX_VM_AVAILABLE}"
   else
-    eurybox_display_message debug VM "VM $NAME - start OK"
+    eurybox_display_message message VM "VM $NAME - start OK"
   fi
 }
 

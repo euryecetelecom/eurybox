@@ -76,9 +76,9 @@ eurybox_backup_mount_target ()
         STATUS=$?
         if [[ !($STATUS -eq 0) ]]
         then
-          eurybox_display_message warning BACKUP "Backup target $BKP_PROTOCOL server unreacheable on host $BKP_HOST / port $BKP_PORT - trying to contact again in 5 seconds - error $STATUS\n$NB_TRY_LEFT left"
           NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-          sleep 5
+          eurybox_display_message warning BACKUP "Backup target $BKP_PROTOCOL server unreacheable on host $BKP_HOST / port $BKP_PORT - trying to contact again in ${EURYBOX_ERROR_TEMPORISATION_TIME} seconds - error $STATUS\n$NB_TRY_LEFT left"
+          sleep ${EURYBOX_ERROR_TEMPORISATION_TIME}
         else
           eurybox_display_message debug BACKUP "Backup target $BKP_PROTOCOL server reached on host $BKP_HOST / port $BKP_PORT"
           case $BKP_PROTOCOL in
@@ -87,9 +87,9 @@ eurybox_backup_mount_target ()
               STATUS=$?
               if [[ !($STATUS -eq 0) ]]
               then
-                eurybox_display_message warning BACKUP "Backup target NFS server not registred on destination - trying to contact again in 5 seconds - error $STATUS:\n$NFS_OUT\n$NB_TRY_LEFT left"
                 NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-                sleep 5
+                eurybox_display_message warning BACKUP "Backup target NFS server not registred on destination - trying to contact again in ${EURYBOX_ERROR_TEMPORISATION_TIME} seconds - error $STATUS:\n$NFS_OUT\n$NB_TRY_LEFT left"
+                sleep ${EURYBOX_ERROR_TEMPORISATION_TIME}
               else
                 eurybox_display_message debug BACKUP "Backup target $BKP_PROTOCOL server reached on host $BKP_HOST / port $BKP_PORT\n$NFS_OUT"
                 MOUNT_OUT=`sudo mount $MOUNT_OPTIONS $EURYBOX_MNT_NFS_OPTIONS -o proto=tcp,port=${BKP_PORT}  -t $BKP_TYPE ${BKP_HOST}:${BKP_DEST} ${BKP_MOUNT} 2>&1`
@@ -97,8 +97,8 @@ eurybox_backup_mount_target ()
                 if [[ !($STATUS -eq 0) ]]
                 then
                   NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-                  eurybox_display_message warning BACKUP "Backup target NFS mount failed and target folder is empty - trying to mount again in 5 seconds - error $STATUS:\n$MOUNT_OUT\n$NB_TRY_LEFT left"
-                  sleep 5
+                  eurybox_display_message warning BACKUP "Backup target NFS mount failed and target folder is empty - trying to mount again in ${EURYBOX_ERROR_TEMPORISATION_TIME} seconds - error $STATUS:\n$MOUNT_OUT\n$NB_TRY_LEFT left"
+                  sleep ${EURYBOX_ERROR_TEMPORISATION_TIME}
                 fi
               fi
             ;;
@@ -108,9 +108,9 @@ eurybox_backup_mount_target ()
               STATUS=$?
               if [[ !($STATUS -eq 0) ]]
               then
-                eurybox_display_message warning BACKUP "Backup SSH server unreacheable on host $BKP_HOST / port $BKP_PORT - trying to contact again in 5 seconds - error $STATUS:\n$SSH_OUT\n$NB_TRY_LEFT left"
                 NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-                sleep 5
+                eurybox_display_message warning BACKUP "Backup SSH server unreacheable on host $BKP_HOST / port $BKP_PORT - trying to contact again in ${EURYBOX_ERROR_TEMPORISATION_TIME} seconds - error $STATUS:\n$SSH_OUT\n$NB_TRY_LEFT left"
+                sleep ${EURYBOX_ERROR_TEMPORISATION_TIME}
               else
                 eurybox_display_message debug BACKUP "Backup target $BKP_PROTOCOL server reached on host $BKP_HOST / port $BKP_PORT\n$SSH_OUT"
                 MOUNT_OUT=`sshfs $EURYBOX_MNT_SSHFS_OPTIONS -p $BKP_PORT ${BKP_USER}@${BKP_HOST}:${BKP_DEST} ${BKP_MOUNT} 2>&1`
@@ -118,8 +118,8 @@ eurybox_backup_mount_target ()
                 if [[ !($STATUS -eq 0) ]]
                 then
                   NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-                  eurybox_display_message warning BACKUP "Backup target SSHFS mount failed - trying to mount again in 5 seconds - error $STATUS:\n$MOUNT_OUT\n$NB_TRY_LEFT left"
-                  sleep 5
+                  eurybox_display_message warning BACKUP "Backup target SSHFS mount failed - trying to mount again in ${EURYBOX_ERROR_TEMPORISATION_TIME} seconds - error $STATUS:\n$MOUNT_OUT\n$NB_TRY_LEFT left"
+                  sleep ${EURYBOX_ERROR_TEMPORISATION_TIME}
                 fi
               fi
             ;;
@@ -129,9 +129,9 @@ eurybox_backup_mount_target ()
               STATUS=$?
               if [[ !($STATUS -eq 0) ]]
               then
-                eurybox_display_message warning BACKUP "Backup target $BKP_PROTOCOL server unreacheable on host $BKP_HOST / port $BKP_PORT - trying to contact again in 5 seconds - error $STATUS:\n$FTP_OUT\n$NB_TRY_LEFT left"
                 NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-                sleep 5
+                eurybox_display_message warning BACKUP "Backup target $BKP_PROTOCOL server unreacheable on host $BKP_HOST / port $BKP_PORT - trying to contact again in ${EURYBOX_ERROR_TEMPORISATION_TIME} seconds - error $STATUS:\n$FTP_OUT\n$NB_TRY_LEFT left"
+                sleep ${EURYBOX_ERROR_TEMPORISATION_TIME}
               else
                 eurybox_display_message debug BACKUP "Backup target $BKP_PROTOCOL server reached on host $BKP_HOST / port $BKP_PORT\n$FTP_OUT"
                 MOUNT_OUT=`sudo curlftpfs $EURYBOX_MNT_FTPFS_OPTIONS ftp://${BKP_USER}:${BKP_PASSWORD}@${BKP_HOST}:${BKP_PORT}${BKP_DEST} ${BKP_MOUNT} 2>&1`
@@ -139,8 +139,8 @@ eurybox_backup_mount_target ()
                 if [[ !($STATUS -eq 0) ]]
                 then
                   NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-                  eurybox_display_message warning BACKUP "Backup target FTPFS mount failed - trying to mount again in 5 seconds - error $STATUS:\n$MOUNT_OUT\n$NB_TRY_LEFT left"
-                  sleep 5
+                  eurybox_display_message warning BACKUP "Backup target FTPFS mount failed - trying to mount again in ${EURYBOX_ERROR_TEMPORISATION_TIME} seconds - error $STATUS:\n$MOUNT_OUT\n$NB_TRY_LEFT left"
+                  sleep ${EURYBOX_ERROR_TEMPORISATION_TIME}
                 fi
               fi
             ;;
@@ -153,9 +153,9 @@ eurybox_backup_mount_target ()
         STATUS=$?
         if [[ !($STATUS -eq 0) ]]
         then
-          eurybox_display_message warning BACKUP "Backup target ${BKP_PART} not found - trying to detect device again in 5 seconds - error $STATUS:\n$PART_OUT\n$NB_TRY_LEFT left"
+          eurybox_display_message warning BACKUP "Backup target ${BKP_PART} not found - trying to detect device again in ${EURYBOX_ERROR_TEMPORISATION_TIME} seconds - error $STATUS:\n$PART_OUT\n$NB_TRY_LEFT left"
           NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-          sleep 5
+          sleep ${EURYBOX_ERROR_TEMPORISATION_TIME}
         else
           eurybox_display_message message BACKUP "Backup device partition ${BKP_PART} detected"
           eurybox_display_message debug BACKUP "Partition detection command output:\n$PART_OUT"
@@ -163,9 +163,9 @@ eurybox_backup_mount_target ()
           STATUS=$?
           if [[ !($STATUS -eq 0) ]]
           then
-            eurybox_display_message warning BACKUP "Backup target ${BKP_PART} mount failed - trying to mount partition again in 5 seconds - error $STATUS:\n$MOUNT_OUT\n$NB_TRY_LEFT left"
             NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-            sleep 5
+            eurybox_display_message warning BACKUP "Backup target ${BKP_PART} mount failed - trying to mount partition again in ${EURYBOX_ERROR_TEMPORISATION_TIME} seconds - error $STATUS:\n$MOUNT_OUT\n$NB_TRY_LEFT left"
+            sleep ${EURYBOX_ERROR_TEMPORISATION_TIME}
           fi
         fi
       ;;
@@ -270,8 +270,8 @@ eurybox_backup_umount_target ()
         if [[ !($STATUS -eq 0) ]]
         then
           NB_TRY_LEFT=$(( $NB_TRY_LEFT - 1 ))
-          eurybox_display_message warning BACKUP "Backup target unmount failed and target folder is not empty. Trying to unmount again in 5 seconds - error $STATUS\n$UMOUNT_OUT\n$NB_TRY_LEFT left"
-          sleep 5
+          eurybox_display_message warning BACKUP "Backup target unmount failed and target folder is not empty. Trying to unmount again in ${EURYBOX_ERROR_TEMPORISATION_TIME} seconds - error $STATUS\n$UMOUNT_OUT\n$NB_TRY_LEFT left"
+          sleep ${EURYBOX_ERROR_TEMPORISATION_TIME}
         fi
       ;;
       * )
