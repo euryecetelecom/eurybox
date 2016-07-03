@@ -87,7 +87,7 @@ eurybox_restore_file ()
   STATUS=1234
   if [[ $ARCH_ENC = "true" ]]
   then
-    RESTORE_OUT=`sudo sh -c "openssl enc -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -d -in $ARCH_FILE -k ${EURYBOX_BACKUP_ARCHIVE[PASSWORD]} | tar ${TAR_OPTIONS} $SELECT_FILE" 2>&1`
+    RESTORE_OUT=`sudo sh -c "openssl enc -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -d -in $ARCH_FILE -pass file:${EURYBOX_BACKUP_ARCHIVE[PASSFILE]} | tar ${TAR_OPTIONS} $SELECT_FILE" 2>&1`
     STATUS=$?
   else
     RESTORE_OUT=`sudo sh -c "tar ${TAR_OPTIONS} -f $ARCH_FILE $SELECT_FILE" 2>&1`

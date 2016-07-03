@@ -19,7 +19,7 @@ eurybox_check_arch ()
   esac
   if [[ ${ARCH_ENC} = "true" ]]
   then
-    ARCH_OUT=`sudo sh -c "openssl enc -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -d -in ${ARCH_FILE} -k ${EURYBOX_BACKUP_ARCHIVE[PASSWORD]} | tar ${TAR_OPTIONS}" 2>&1`
+    ARCH_OUT=`sudo sh -c "openssl enc -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -d -in ${ARCH_FILE} -pass file:${EURYBOX_BACKUP_ARCHIVE[PASSFILE]} | tar ${TAR_OPTIONS}" 2>&1`
     STATUS=$?
   else
     ARCH_OUT=`sudo sh -c "tar ${TAR_OPTIONS} -f ${ARCH_FILE}" 2>&1`
@@ -71,7 +71,7 @@ eurybox_check_command()
 #Conf file needs to be sourced before
 eurybox_check_configuration ()
 {
-  local -i SCRIPT_TYPE=$1
+  local SCRIPT_TYPE=$1
   
   #Checking script execution parameters
   if [[ -z $EURYBOX_CORPORATE || -z $EURYBOX_LOG_LEVEL ]]
@@ -124,20 +124,28 @@ eurybox_check_configuration ()
   if [[ $SCRIPT_TYPE = "BACKUP" || $SCRIPT_TYPE = "RESTORE" ]]
   then
     #Checking backup target parameters
-    if [[ -z $EURYBOX_BACKUP_TYPE || ${#EURYBOX_BACKUP_DESTINATION[@]} -eq 0 || ${#EURYBOX_BACKUP_ARCHIVE[@]} -eq 0 || ${#EURYBOX_BACKUP_TARGETS[@]} -eq 0 ]]
+    if [[ -z $EURYBOX_BACKUP_TYPE || ${#EURYBOX_BACKUP_DESTINATION[@]} -eq 0 || ${#EURYBOX_BACKUP_ARCHIVE[@]} -eq 0 ]]
     then
-      eurybox_display_message error CHECK "Backup parameters not set: Cold/$EURYBOX_BACKUP_COLD Hot/$EURYBOX_BACKUP_HOT Destination/${EURYBOX_BACKUP_DESTINATION[*]} Archive/${EURYBOX_BACKUP_ARCHIVE[*]} Target/${EURYBOX_BACKUP_TARGETS[*]}"
+      eurybox_display_message error CHECK "Backup parameters not set:\nType:$EURYBOX_BACKUP_TYPE\nDestination:${EURYBOX_BACKUP_DESTINATION[*]}\nArchive:${EURYBOX_BACKUP_ARCHIVE[*]}\nTargets:${EURYBOX_BACKUP_TARGETS[*]}"
     else
       eurybox_display_message message CHECK "Backup parameters:"
-      eurybox_display_message message CHECK "Cold backup enabled: $EURYBOX_BACKUP_COLD"
-      eurybox_display_message message CHECK "Hot backup enabled: $EURYBOX_BACKUP_HOT"
+      eurybox_display_message message CHECK "Backup type: $EURYBOX_BACKUP_TYPE"
       eurybox_display_message message CHECK "Backup destination: ${EURYBOX_BACKUP_DESTINATION[*]}"
-      if [[ $EURYBOX_LOG_LEVEL = "debug" ]]
-      then
-#NB: will display the encryption passphrase in the logs if debug mode selected
-        eurybox_display_message debug CHECK "Archive parameters: ${EURYBOX_BACKUP_ARCHIVE[*]}"
-      fi
+      eurybox_display_message message CHECK "Archive parameters: ${EURYBOX_BACKUP_ARCHIVE[*]}"
       eurybox_display_message message CHECK "Archive targets: ${EURYBOX_BACKUP_TARGETS[*]}"
+    fi
+  fi
+  if [[ $SCRIPT_TYPE = "UPDATE" ]]
+  then
+    #Checking update parameters
+    if [[ -z $EURYBOX_UPDATE_LOCAL_REPOSITORIES_ACTIVATED || -z $EURYBOX_UPDATE_LOCAL_REPOSITORIES_PATH ]]
+    then
+      eurybox_display_message error CHECK "Update parameters not set:\nLocal repositories activated:$EURYBOX_UPDATE_LOCAL_REPOSITORIES_ACTIVATED\nLocal storage path:$EURYBOX_UPDATE_LOCAL_REPOSITORIES_PATH\nTarget repositories:${EURYBOX_UPDATE_LOCAL_REPOSITORIES[*]}"
+    else
+      eurybox_display_message message CHECK "Update parameters:"
+      eurybox_display_message message CHECK "Local repositories enabled: $EURYBOX_UPDATE_LOCAL_REPOSITORIES_ACTIVATED"
+      eurybox_display_message message CHECK "Local repositories storage path: $EURYBOX_UPDATE_LOCAL_REPOSITORIES_PATH"
+      eurybox_display_message message CHECK "Target repositories: ${EURYBOX_UPDATE_LOCAL_REPOSITORIES[*]}"
     fi
   fi
 ##Make sure pipe individual output exit status are available
@@ -459,7 +467,7 @@ eurybox_check_environment ()
       case ${EURYBOX_BACKUP_ARCHIVE[ENCRYPT]} in
         true )
           eurybox_check_command openssl
-          ENC_OUT=`echo "TEST"| openssl enc -salt -e -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -k ${EURYBOX_BACKUP_ARCHIVE[PASSWORD]} -out /dev/null 2>&1`
+          ENC_OUT=`sudo sh -c "echo TEST | openssl enc -salt -e -${EURYBOX_BACKUP_ARCHIVE[ENC_ALGO]} -pass file:${EURYBOX_BACKUP_ARCHIVE[PASSFILE]} -out /dev/null" 2>&1`
           STATUS=$?
           if [[ !($STATUS -eq 0) ]]
           then
