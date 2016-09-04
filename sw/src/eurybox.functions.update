@@ -140,7 +140,7 @@ eurybox_update_local_repository ()
         eurybox_display_message debug UPDATE "Mkdir command output:\n$MKDIR_OUT"
         eurybox_display_message debug UPDATE "Clone command output:\n$UPDATE_OUT"
 #TODO:MAC MASK
-        UPDATE_OUT=`sudo chmod -R 500 ${REPO_PATH}/${NAME}/${ARCH} 2>&1`
+        UPDATE_OUT=`sudo chmod -R 555 ${REPO_PATH}/${NAME}/${ARCH} 2>&1`
         STATUS=$?
         if [[ $STATUS -eq 0 ]]
         then

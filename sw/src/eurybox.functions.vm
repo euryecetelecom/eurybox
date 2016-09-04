@@ -202,7 +202,7 @@ eurybox_vm_shutdown_ssh ()
   done
   if [[ $NB_TRY_LEFT -eq 0 ]]
   then
-    eurybox_display_message warning VM "VM $NAME - SSH stop failed - VM still running after $EURYBOX_MAX_RETRY_ON_FAILURE:\n$EURYBOX_VM_NAME\n error $STATUS:\n$SSH_OUT\nForcing stop"
+    eurybox_display_message warning VM "VM $NAME - SSH stop failed - VM still running after $EURYBOX_MAX_RETRY_ON_FAILURE\nForcing stop"
     VIRSH_OUT=`sudo virsh $EURYBOX_VIRSH_OPTIONS destroy $NAME 2>&1`
     STATUS=$?
     if [[ !($STATUS -eq 0) ]]

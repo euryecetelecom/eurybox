@@ -56,7 +56,7 @@ eurybox_check_command()
 {
   local -i not_found
   for cmd; do
-    command -v >&- "$cmd" || { 
+    sudo command -v >&- "$cmd" || { 
          eurybox_display_message warning CHECK $"Command $cmd is not found"
             let not_found++
     }
@@ -114,7 +114,7 @@ eurybox_check_configuration ()
     esac
     case $EURYBOX_DISTRIB_MAC_TYPE in
       selinux|none ) 
-         eurybox_display_message message CHECK "Distribution mandatory access control type configured: $EURYBOX_DISTRIB_MAC_TYPE"
+         eurybox_display_message message CHECK "Mandatory access control type configured: $EURYBOX_DISTRIB_MAC_TYPE"
       ;;
       apparmor|* )
         eurybox_display_message error CHECK "Unsupported mandatory access control type: $EURYBOX_DISTRIB_MAC_TYPE - please use selinux or none"
@@ -126,13 +126,13 @@ eurybox_check_configuration ()
     #Checking backup target parameters
     if [[ -z $EURYBOX_BACKUP_TYPE || ${#EURYBOX_BACKUP_DESTINATION[@]} -eq 0 || ${#EURYBOX_BACKUP_ARCHIVE[@]} -eq 0 ]]
     then
-      eurybox_display_message error CHECK "Backup parameters not set:\nType:$EURYBOX_BACKUP_TYPE\nDestination:${EURYBOX_BACKUP_DESTINATION[*]}\nArchive:${EURYBOX_BACKUP_ARCHIVE[*]}\nTargets:${EURYBOX_BACKUP_TARGETS[*]}"
+      eurybox_display_message error CHECK "Archive parameters not set:\nType:$EURYBOX_BACKUP_TYPE\nDestination:${EURYBOX_BACKUP_DESTINATION[*]}\nArchive:${EURYBOX_BACKUP_ARCHIVE[*]}\nTargets:${EURYBOX_BACKUP_TARGETS[*]}"
     else
-      eurybox_display_message message CHECK "Backup parameters:"
-      eurybox_display_message message CHECK "Backup type: $EURYBOX_BACKUP_TYPE"
-      eurybox_display_message message CHECK "Backup destination: ${EURYBOX_BACKUP_DESTINATION[*]}"
+      eurybox_display_message message CHECK "Archive parameters:"
+      eurybox_display_message message CHECK "Archive destination/origin: ${EURYBOX_BACKUP_DESTINATION[*]}"
       eurybox_display_message message CHECK "Archive parameters: ${EURYBOX_BACKUP_ARCHIVE[*]}"
-      eurybox_display_message message CHECK "Archive targets: ${EURYBOX_BACKUP_TARGETS[*]}"
+#      eurybox_display_message message CHECK "Backup type: $EURYBOX_BACKUP_TYPE"
+#      eurybox_display_message message CHECK "Archive targets: ${EURYBOX_BACKUP_TARGETS[*]}"
     fi
   fi
   if [[ $SCRIPT_TYPE = "UPDATE" ]]
