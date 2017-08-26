@@ -122,7 +122,7 @@ eurybox_create_archive_fec ()
   esac
   case "$FEC_TYPE" in
     par2 )
-      FEC_OUT=`sudo sh -c "par2 c $FEC_OPTIONS -r${FEC_LEVEL} -n${FEC_FILE_NUM} -u -t+ ${FEC_DESTINATION} ${FEC_TARGET}" 2>&1`
+      FEC_OUT=`sudo sh -c "par2 c $FEC_OPTIONS -r${FEC_LEVEL} -n${FEC_FILE_NUM} -u ${FEC_TARGET}" 2>&1`
       STATUS=$?
     ;;
     zfec )
